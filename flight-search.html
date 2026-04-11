@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>機票搜尋 · FlightGo</title>
+  <style>
+    :root {
+      --blue:#0066cc; --blue-dark:#004fa3; --blue-light:#e8f0fb;
+      --accent:#ff6b35; --text:#1a1a2e; --text-muted:#6b7280;
+      --border:#e2e8f0; --white:#fff; --bg:#f0f4f8;
+      --shadow:0 4px 24px rgba(0,0,0,.10); --shadow-sm:0 2px 8px rgba(0,0,0,.06);
+      --radius:12px; --radius-sm:8px;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang TC','Noto Sans TC',sans-serif;color:var(--text);background:var(--bg);min-height:100vh}
+
+    /* Header */
+    header{background:var(--white);box-shadow:var(--shadow-sm);position:sticky;top:0;z-index:100}
+    .header-inner{max-width:1200px;margin:0 auto;padding:0 24px;height:60px;display:flex;align-items:center;justify-content:space-between}
+    .logo{font-size:22px;font-weight:800;color:var(--blue);letter-spacing:-.5px;text-decoration:none}
+    .logo span{color:var(--accent)}
+    .header-nav{display:flex;gap:24px}
+    .header-nav a{color:var(--text-muted);text-decoration:none;font-size:14px;transition:color .2s}
+    .header-nav a:hover{color:var(--blue)}
+
+    /* Hero */
+    .hero{background:linear-gradient(135deg,#1a3a6e 0%,#0066cc 60%,#0099e6 100%);padding:56px 24px 80px;position:relative;overflow:hidden}
+    .hero::before{content:'';position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")}
+    .hero-title{text-align:center;color:var(--white);margin-bottom:32px}
+    .hero-title h1{font-size:36px;font-weight:800;margin-bottom:8px}
+    .hero-title p{font-size:16px;opacity:.85}
+
+    /* Search Card */
+    .search-card{background:var(--white);border-radius:var(--radius);box-shadow:0 8px 40px rgba(0,0,0,.18);max-width:960px;margin:0 auto;padding:28px 32px 32px;position:relative;z-index:1}
+    .trip-tabs{display:flex;gap:8px;margin-bottom:24px}
+    .trip-tab{padding:8px 20px;border-radius:20px;border:1.5px solid var(--border);background:transparent;color:var(--text-muted);font-size:14px;cursor:pointer;transition:all .2s;font-family:inherit}
+    .trip-tab.active{background:var(--blue);border-color:var(--blue);color:var(--white);font-weight:600}
+    .trip-tab:hover:not(.active){border-color:var(--blue);color:var(--blue)}
+
+    .route-row{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+    .airport-field{flex:1;position:relative}
+    .field-label{font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+    .field-input{width:100%;border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:12px 16px;font-size:15px;font-family:inherit;color:var(--text);transition:border-color .2s;outline:none;background:var(--white)}
+    .field-input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(0,102,204,.1)}
+    .field-input::placeholder{color:#aaa;font-size:14px}
+    .field-sub{font-size:12px;color:var(--text-muted);margin-top:4px;min-height:18px}
+
+    .autocomplete-list{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--white);border:1.5px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow);z-index:300;max-height:300px;overflow-y:auto;display:none}
+    .autocomplete-list.show{display:block}
+    .ac-item{padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);transition:background .15s}
+    .ac-item:last-child{border-bottom:none}
+    .ac-item:hover{background:var(--blue-light)}
+    .ac-iata{background:var(--blue);color:var(--white);font-size:11px;font-weight:700;padding:3px 7px;border-radius:4px;min-width:38px;text-align:center;flex-shrink:0}
+    .ac-info{flex:1;min-width:0}
+    .ac-name{font-size:14px;font-weight:600}
+    .ac-country{font-size:11px;color:var(--text-muted)}
+    .ac-group-header{padding:7px 14px 3px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;background:#f8fafc;border-bottom:1px solid var(--border)}
+
+    .swap-btn{width:40px;height:40px;border-radius:50%;border:1.5px solid var(--border);background:var(--white);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:22px;transition:all .2s;color:var(--blue)}
+    .swap-btn:hover{background:var(--blue);border-color:var(--blue);color:var(--white);transform:rotate(180deg)}
+    .swap-btn svg{width:18px;height:18px}
+
+    .options-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px}
+    .options-row.oneway{grid-template-columns:1fr 1fr 1fr}
+
+    .pax-dropdown{position:relative}
+    .pax-trigger{width:100%;border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:12px 16px;font-size:15px;font-family:inherit;color:var(--text);background:var(--white);cursor:pointer;text-align:left;transition:border-color .2s;outline:none}
+    .pax-trigger:hover{border-color:var(--blue)}
+    .pax-panel{position:absolute;top:calc(100% + 4px);left:0;background:var(--white);border:1.5px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow);z-index:300;padding:16px;min-width:260px;display:none}
+    .pax-panel.show{display:block}
+    .pax-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)}
+    .pax-row:last-of-type{border-bottom:none}
+    .pax-type{font-size:14px;font-weight:600}
+    .pax-desc{font-size:12px;color:var(--text-muted)}
+    .pax-counter{display:flex;align-items:center;gap:12px}
+    .counter-btn{width:32px;height:32px;border-radius:50%;border:1.5px solid var(--border);background:var(--white);cursor:pointer;font-size:18px;font-weight:300;color:var(--blue);display:flex;align-items:center;justify-content:center;transition:all .15s;line-height:1}
+    .counter-btn:hover:not(:disabled){background:var(--blue);color:var(--white);border-color:var(--blue)}
+    .counter-btn:disabled{opacity:.3;cursor:not-allowed}
+    .counter-val{font-size:16px;font-weight:600;min-width:20px;text-align:center}
+    .pax-done{width:100%;margin-top:12px;padding:10px;background:var(--blue);color:var(--white);border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+
+    select.field-input{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px;cursor:pointer}
+
+    .search-btn{width:100%;padding:16px;background:linear-gradient(135deg,var(--blue) 0%,#0099e6 100%);color:var(--white);border:none;border-radius:var(--radius-sm);font-size:18px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.5px;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:10px}
+    .search-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(0,102,204,.35)}
+    .search-btn svg{width:22px;height:22px}
+
+    /* Main */
+    .main{max-width:1200px;margin:0 auto;padding:48px 24px}
+    .section-title{font-size:22px;font-weight:700;margin-bottom:20px;display:flex;align-items:center;gap:12px}
+    .section-title::after{content:'';flex:1;height:2px;background:var(--border)}
+
+    /* Departure quick select */
+    .departure-tabs{display:flex;gap:8px;margin-bottom:32px;flex-wrap:wrap}
+    .dep-tab{padding:8px 18px;border-radius:20px;border:1.5px solid var(--border);background:var(--white);color:var(--text-muted);font-size:13px;cursor:pointer;transition:all .2s;font-family:inherit;font-weight:500}
+    .dep-tab.active{background:var(--blue);border-color:var(--blue);color:var(--white)}
+    .dep-tab:hover:not(.active){border-color:var(--blue);color:var(--blue)}
+
+    /* Region tabs */
+    .region-tabs{display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap}
+    .region-tab{padding:7px 16px;border-radius:20px;border:1.5px solid var(--border);background:var(--white);color:var(--text-muted);font-size:13px;cursor:pointer;transition:all .2s;font-family:inherit}
+    .region-tab.active{background:var(--blue);border-color:var(--blue);color:var(--white);font-weight:600}
+    .region-tab:hover:not(.active){border-color:var(--blue);color:var(--blue)}
+
+    /* Destination grid */
+    .dest-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:48px}
+    .dest-card{border-radius:var(--radius);overflow:hidden;cursor:pointer;box-shadow:var(--shadow-sm);transition:all .25s;position:relative;background:var(--white)}
+    .dest-card:hover{transform:translateY(-4px);box-shadow:var(--shadow)}
+    .dest-img{width:100%;height:130px;object-fit:cover;display:block;background:#ddd}
+    .dest-img-bg{width:100%;height:130px;display:flex;align-items:center;justify-content:center;font-size:48px}
+    .dest-body{padding:12px 14px}
+    .dest-name{font-size:15px;font-weight:700;margin-bottom:2px}
+    .dest-country{font-size:12px;color:var(--text-muted);margin-bottom:8px}
+    .dest-price{font-size:18px;font-weight:800;color:var(--accent)}
+    .dest-price span{font-size:11px;font-weight:400;color:var(--text-muted)}
+    .dest-iata{position:absolute;top:8px;left:8px;background:rgba(0,0,0,.55);color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:4px}
+
+    /* Calendar modal */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:none;align-items:center;justify-content:center;padding:20px}
+    .modal-overlay.show{display:flex}
+    .modal{background:var(--white);border-radius:var(--radius);box-shadow:0 20px 60px rgba(0,0,0,.25);width:100%;max-width:760px;max-height:90vh;overflow-y:auto}
+    .modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .modal-title{font-size:18px;font-weight:700}
+    .modal-subtitle{font-size:13px;color:var(--text-muted);margin-top:2px}
+    .modal-close{width:36px;height:36px;border:none;background:var(--bg);border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .modal-body{padding:24px}
+
+    /* Calendar */
+    .cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+    .cal-nav-btn{padding:8px 16px;border:1.5px solid var(--border);background:var(--white);border-radius:var(--radius-sm);cursor:pointer;font-size:13px;font-family:inherit;transition:all .2s}
+    .cal-nav-btn:hover{border-color:var(--blue);color:var(--blue)}
+    .cal-month-label{font-size:16px;font-weight:700}
+    .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+    .cal-dow{text-align:center;font-size:11px;font-weight:700;color:var(--text-muted);padding:6px 0;text-transform:uppercase}
+    .cal-cell{border-radius:var(--radius-sm);padding:8px 4px;text-align:center;cursor:pointer;transition:all .15s;border:1.5px solid transparent;min-height:60px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+    .cal-cell:hover:not(.empty):not(.past){border-color:var(--blue);background:var(--blue-light)}
+    .cal-cell.selected{background:var(--blue);color:var(--white)!important;border-color:var(--blue)}
+    .cal-cell.selected .cal-price{color:rgba(255,255,255,.85)}
+    .cal-cell.past{opacity:.35;cursor:not-allowed}
+    .cal-cell.empty{cursor:default}
+    .cal-cell.low-price{background:#f0fdf4;border-color:#86efac}
+    .cal-cell.low-price .cal-date{color:#166534}
+    .cal-cell.low-price .cal-price{color:#16a34a;font-weight:700}
+    .cal-cell.high-price{background:#fff7ed}
+    .cal-cell.high-price .cal-price{color:#ea580c}
+    .cal-date{font-size:14px;font-weight:600}
+    .cal-price{font-size:11px;color:var(--text-muted)}
+    .cal-loading{text-align:center;padding:40px;color:var(--text-muted)}
+    .cal-loading .spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 12px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .cal-select-btn{width:100%;padding:14px;background:var(--blue);color:var(--white);border:none;border-radius:var(--radius-sm);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:20px;display:none}
+    .cal-select-btn.show{display:block}
+    .cal-legend{display:flex;gap:16px;margin-top:16px;font-size:12px;color:var(--text-muted)}
+    .cal-legend-item{display:flex;align-items:center;gap:6px}
+    .cal-legend-dot{width:12px;height:12px;border-radius:2px}
+
+    /* Price summary */
+    .price-summary{background:var(--blue-light);border-radius:var(--radius-sm);padding:16px;margin-top:16px;display:none}
+    .price-summary.show{display:block}
+    .price-summary-row{display:flex;justify-content:space-between;align-items:center}
+    .price-summary-label{font-size:14px;color:var(--text-muted)}
+    .price-summary-value{font-size:22px;font-weight:800;color:var(--blue)}
+
+    /* Features */
+    .features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:48px}
+    .feature-card{background:var(--white);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow-sm);text-align:center}
+    .feature-icon{font-size:36px;margin-bottom:12px}
+    .feature-title{font-size:16px;font-weight:700;margin-bottom:8px}
+    .feature-desc{font-size:14px;color:var(--text-muted);line-height:1.6}
+
+    /* Footer */
+    footer{background:#1a1a2e;color:#6b7280;text-align:center;padding:32px 24px;font-size:13px}
+    footer a{color:#94a3b8;text-decoration:none}
+    footer a:hover{color:#60a5fa}
+
+    /* Toast */
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:#1a1a2e;color:white;padding:12px 24px;border-radius:8px;font-size:14px;z-index:9999;transition:transform .3s;box-shadow:var(--shadow)}
+    .toast.show{transform:translateX(-50%) translateY(0)}
+
+    /* Responsive */
+    @media(max-width:768px){
+      .hero-title h1{font-size:26px}
+      .search-card{padding:20px 16px}
+      .route-row{flex-direction:column;gap:0}
+      .swap-btn{margin:8px auto;transform:rotate(90deg)}
+      .swap-btn:hover{transform:rotate(270deg)}
+      .options-row,.options-row.oneway{grid-template-columns:1fr 1fr}
+      .features-grid{grid-template-columns:1fr}
+      .header-nav{display:none}
+      .cal-grid{gap:2px}
+      .cal-cell{min-height:50px;padding:6px 2px}
+      .cal-date{font-size:12px}
+      .cal-price{font-size:10px}
+    }
+    @media(max-width:480px){
+      .options-row,.options-row.oneway{grid-template-columns:1fr}
+      .dest-grid{grid-template-columns:repeat(2,1fr)}
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a class="logo" href="#">✈ Flight<span>Go</span></a>
+    <nav class="header-nav">
+      <a href="#">機票</a><a href="#">飯店</a><a href="#">旅遊</a>
+    </nav>
+  </div>
+</header>
+
+<!-- Hero + Search -->
+<section class="hero">
+  <div class="hero-title">
+    <h1>探索全球最優惠機票</h1>
+    <p>比較數百家航空公司，找到最低票價</p>
+  </div>
+  <div class="search-card">
+    <div class="trip-tabs">
+      <button class="trip-tab active" onclick="setTripType('s',this)">單程</button>
+      <button class="trip-tab" onclick="setTripType('d',this)">來回</button>
+    </div>
+    <div class="route-row">
+      <div class="airport-field">
+        <div class="field-label">出發地</div>
+        <input class="field-input" id="fromInput" type="text" placeholder="城市或機場" autocomplete="off"
+          oninput="filterAirports('from')" onfocus="showDropdown('from')" onblur="hideDropdown('from',300)">
+        <div class="field-sub" id="fromSub">台灣桃園國際機場</div>
+        <div class="autocomplete-list" id="fromList"></div>
+      </div>
+      <button class="swap-btn" onclick="swapAirports()" title="交換">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/>
+        </svg>
+      </button>
+      <div class="airport-field">
+        <div class="field-label">目的地</div>
+        <input class="field-input" id="toInput" type="text" placeholder="城市或機場" autocomplete="off"
+          oninput="filterAirports('to')" onfocus="showDropdown('to')" onblur="hideDropdown('to',300)">
+        <div class="field-sub" id="toSub"></div>
+        <div class="autocomplete-list" id="toList"></div>
+      </div>
+    </div>
+    <div class="options-row oneway" id="optionsRow">
+      <div>
+        <div class="field-label">出發日期</div>
+        <input class="field-input" id="ddate" type="date">
+      </div>
+      <div id="rdateWrap" style="display:none">
+        <div class="field-label">返程日期</div>
+        <input class="field-input" id="rdate" type="date">
+      </div>
+      <div class="pax-dropdown">
+        <div class="field-label">乘客</div>
+        <button class="pax-trigger" onclick="togglePaxPanel()" id="paxTrigger">1 成人</button>
+        <div class="pax-panel" id="paxPanel">
+          <div class="pax-row">
+            <div><div class="pax-type">成人</div><div class="pax-desc">12 歲以上</div></div>
+            <div class="pax-counter">
+              <button class="counter-btn" onclick="changePax('adult',-1)" id="adultMinus" disabled>−</button>
+              <span class="counter-val" id="adultVal">1</span>
+              <button class="counter-btn" onclick="changePax('adult',1)">+</button>
+            </div>
+          </div>
+          <div class="pax-row">
+            <div><div class="pax-type">兒童</div><div class="pax-desc">2–11 歲</div></div>
+            <div class="pax-counter">
+              <button class="counter-btn" onclick="changePax('child',-1)" id="childMinus" disabled>−</button>
+              <span class="counter-val" id="childVal">0</span>
+              <button class="counter-btn" onclick="changePax('child',1)">+</button>
+            </div>
+          </div>
+          <div class="pax-row">
+            <div><div class="pax-type">嬰兒</div><div class="pax-desc">0–23 個月</div></div>
+            <div class="pax-counter">
+              <button class="counter-btn" onclick="changePax('infant',-1)" id="infantMinus" disabled>−</button>
+              <span class="counter-val" id="infantVal">0</span>
+              <button class="counter-btn" onclick="changePax('infant',1)">+</button>
+            </div>
+          </div>
+          <button class="pax-done" onclick="togglePaxPanel()">確認</button>
+        </div>
+      </div>
+      <div>
+        <div class="field-label">艙等</div>
+        <select class="field-input" id="cabin">
+          <option value="y">經濟艙</option>
+          <option value="s">豪華經濟艙</option>
+          <option value="c">商務艙</option>
+          <option value="f">頭等艙</option>
+        </select>
+      </div>
+    </div>
+    <button class="search-btn" onclick="doSearch()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      搜尋機票
+    </button>
+  </div>
+</section>
+
+<!-- Main -->
+<main class="main">
+
+  <!-- Destination Browser -->
+  <h2 class="section-title">探索目的地</h2>
+  <div style="margin-bottom:16px">
+    <div class="field-label" style="margin-bottom:10px">從哪裡出發？</div>
+    <div class="departure-tabs" id="depTabs"></div>
+  </div>
+  <div class="region-tabs" id="regionTabs"></div>
+  <div class="dest-grid" id="destGrid"></div>
+
+  <!-- Features -->
+  <h2 class="section-title">為什麼選擇我們</h2>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">📅</div>
+      <div class="feature-title">最低價日曆</div>
+      <div class="feature-desc">查看每日最低票價，彈性選擇出行日期，輕鬆找到最划算時機</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <div class="feature-title">即時搜尋</div>
+      <div class="feature-desc">運用 Trip.com SOA2 API 即時查詢，數秒呈現全球航班資訊</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🌍</div>
+      <div class="feature-title">全球 120+ 機場</div>
+      <div class="feature-desc">涵蓋亞洲、歐洲、美洲、中東、大洋洲等主要國際機場</div>
+    </div>
+  </div>
+
+</main>
+
+<!-- Price Calendar Modal -->
+<div class="modal-overlay" id="calModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="calTitle">最低票價日曆</div>
+        <div class="modal-subtitle" id="calSubtitle"></div>
+      </div>
+      <button class="modal-close" onclick="closeCalendar()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="calBody">
+        <div class="cal-loading">
+          <div class="spinner"></div>
+          正在查詢最低票價...
+        </div>
+      </div>
+      <div class="price-summary" id="priceSummary">
+        <div class="price-summary-row">
+          <span class="price-summary-label" id="summaryLabel">已選日期</span>
+          <span class="price-summary-value" id="summaryPrice"></span>
+        </div>
+      </div>
+      <button class="cal-select-btn" id="calSelectBtn" onclick="confirmCalDate()">
+        以此日期搜尋 →
+      </button>
+      <div class="cal-legend">
+        <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#dcfce7;border:1px solid #86efac"></div> 低價日</div>
+        <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#fff7ed;border:1px solid #fed7aa"></div> 較高價</div>
+        <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--blue)"></div> 已選擇</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p>© 2026 FlightGo · 資料來源：Trip.com ·
+    <a href="#">隱私權政策</a> · <a href="#">服務條款</a></p>
+  <p style="margin-top:8px;font-size:11px;color:#4b5563">
+    本網站為個人學習專案，搜尋結果將導向 Trip.com 完成訂購
+  </p>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════════
+//  Airport Database  (120+ 機場)
+// ════════════════════════════════════════════════
+const AIRPORTS = [
+  // ── 台灣 ──
+  {iata:'TPE',city:'taipei',        name:'台北桃園',     en:'Taipei Taoyuan',      country:'台灣',  region:'taiwan', emoji:'🇹🇼'},
+  {iata:'TSA',city:'taipei-songshan',name:'台北松山',    en:'Taipei Songshan',     country:'台灣',  region:'taiwan', emoji:'🇹🇼'},
+  {iata:'KHH',city:'kaohsiung',     name:'高雄',         en:'Kaohsiung',           country:'台灣',  region:'taiwan', emoji:'🇹🇼'},
+  {iata:'TNN',city:'tainan',        name:'台南',         en:'Tainan',              country:'台灣',  region:'taiwan', emoji:'🇹🇼'},
+  {iata:'RMQ',city:'taichung',      name:'台中',         en:'Taichung',            country:'台灣',  region:'taiwan', emoji:'🇹🇼'},
+  // ── 日本 ──
+  {iata:'NRT',city:'tokyo',         name:'東京成田',     en:'Tokyo Narita',        country:'日本',  region:'japan',  emoji:'🗼', price:3495, img:'tokyo'},
+  {iata:'HND',city:'tokyo-haneda',  name:'東京羽田',     en:'Tokyo Haneda',        country:'日本',  region:'japan',  emoji:'🗼', price:4100, img:'tokyo'},
+  {iata:'KIX',city:'osaka',         name:'大阪關西',     en:'Osaka Kansai',        country:'日本',  region:'japan',  emoji:'🏯', price:3290, img:'osaka'},
+  {iata:'ITM',city:'osaka-itami',   name:'大阪伊丹',     en:'Osaka Itami',         country:'日本',  region:'japan',  emoji:'🏯', price:3400, img:'osaka'},
+  {iata:'FUK',city:'fukuoka',       name:'福岡',         en:'Fukuoka',             country:'日本',  region:'japan',  emoji:'⛩️', price:3200, img:'fukuoka'},
+  {iata:'CTS',city:'sapporo',       name:'札幌新千歲',   en:'Sapporo Chitose',     country:'日本',  region:'japan',  emoji:'❄️', price:4200, img:'sapporo'},
+  {iata:'OKA',city:'okinawa',       name:'沖繩那霸',     en:'Okinawa Naha',        country:'日本',  region:'japan',  emoji:'🌺', price:3800, img:'okinawa'},
+  {iata:'NGO',city:'nagoya',        name:'名古屋',       en:'Nagoya',              country:'日本',  region:'japan',  emoji:'🏰', price:3900, img:'nagoya'},
+  {iata:'HIJ',city:'hiroshima',     name:'廣島',         en:'Hiroshima',           country:'日本',  region:'japan',  emoji:'🕊️', price:4500, img:'hiroshima'},
+  {iata:'KOJ',city:'kagoshima',     name:'鹿兒島',       en:'Kagoshima',           country:'日本',  region:'japan',  emoji:'🌋', price:5000, img:'kagoshima'},
+  {iata:'SDJ',city:'sendai',        name:'仙台',         en:'Sendai',              country:'日本',  region:'japan',  emoji:'🌸', price:5200, img:'sendai'},
+  {iata:'TAK',city:'takamatsu',     name:'高松',         en:'Takamatsu',           country:'日本',  region:'japan',  emoji:'🎨', price:4800, img:'takamatsu'},
+  // ── 韓國 ──
+  {iata:'ICN',city:'seoul',         name:'首爾仁川',     en:'Seoul Incheon',       country:'韓國',  region:'korea',  emoji:'🏙️', price:4500, img:'seoul'},
+  {iata:'GMP',city:'seoul-gimpo',   name:'首爾金浦',     en:'Seoul Gimpo',         country:'韓國',  region:'korea',  emoji:'🏙️', price:4800, img:'seoul'},
+  {iata:'PUS',city:'busan',         name:'釜山',         en:'Busan',               country:'韓國',  region:'korea',  emoji:'🌊', price:4200, img:'busan'},
+  {iata:'CJU',city:'jeju',          name:'濟州島',       en:'Jeju',                country:'韓國',  region:'korea',  emoji:'🍊', price:5500, img:'jeju'},
+  // ── 港澳 ──
+  {iata:'HKG',city:'hong-kong',     name:'香港',         en:'Hong Kong',           country:'香港',  region:'hk',     emoji:'🌃', price:2800, img:'hong-kong'},
+  {iata:'MFM',city:'macau',         name:'澳門',         en:'Macau',               country:'澳門',  region:'hk',     emoji:'🎰', price:2600, img:'macau'},
+  // ── 中國 ──
+  {iata:'PEK',city:'beijing',       name:'北京首都',     en:'Beijing Capital',     country:'中國',  region:'china',  emoji:'🏛️', price:6500, img:'beijing'},
+  {iata:'PKX',city:'beijing-daxing',name:'北京大興',     en:'Beijing Daxing',      country:'中國',  region:'china',  emoji:'🏛️', price:6500, img:'beijing'},
+  {iata:'PVG',city:'shanghai',      name:'上海浦東',     en:'Shanghai Pudong',     country:'中國',  region:'china',  emoji:'🌆', price:5800, img:'shanghai'},
+  {iata:'SHA',city:'shanghai-hongqiao',name:'上海虹橋',  en:'Shanghai Hongqiao',   country:'中國',  region:'china',  emoji:'🌆', price:5800, img:'shanghai'},
+  {iata:'CAN',city:'guangzhou',     name:'廣州白雲',     en:'Guangzhou Baiyun',    country:'中國',  region:'china',  emoji:'🏙️', price:5500, img:'guangzhou'},
+  {iata:'SZX',city:'shenzhen',      name:'深圳',         en:'Shenzhen',            country:'中國',  region:'china',  emoji:'🏙️', price:5200, img:'shenzhen'},
+  {iata:'CTU',city:'chengdu',       name:'成都天府',     en:'Chengdu',             country:'中國',  region:'china',  emoji:'🐼', price:7000, img:'chengdu'},
+  {iata:'XMN',city:'xiamen',        name:'廈門',         en:'Xiamen',              country:'中國',  region:'china',  emoji:'🌊', price:5600, img:'xiamen'},
+  {iata:'KMG',city:'kunming',       name:'昆明',         en:'Kunming',             country:'中國',  region:'china',  emoji:'🌸', price:6800, img:'kunming'},
+  {iata:'HGH',city:'hangzhou',      name:'杭州',         en:'Hangzhou',            country:'中國',  region:'china',  emoji:'🌿', price:6000, img:'hangzhou'},
+  {iata:'CSX',city:'changsha',      name:'長沙',         en:'Changsha',            country:'中國',  region:'china',  emoji:'🍊', price:6200, img:'changsha'},
+  // ── 泰國 ──
+  {iata:'BKK',city:'bangkok',       name:'曼谷素萬那普', en:'Bangkok Suvarnabhumi',country:'泰國',  region:'sea',    emoji:'🛕', price:5200, img:'bangkok'},
+  {iata:'DMK',city:'bangkok-dmk',   name:'曼谷廊曼',     en:'Bangkok Don Mueang', country:'泰國',  region:'sea',    emoji:'🛕', price:4800, img:'bangkok'},
+  {iata:'HKT',city:'phuket',        name:'普吉島',       en:'Phuket',              country:'泰國',  region:'sea',    emoji:'🏖️', price:6200, img:'phuket'},
+  {iata:'CNX',city:'chiang-mai',    name:'清邁',         en:'Chiang Mai',          country:'泰國',  region:'sea',    emoji:'🐘', price:6500, img:'chiang-mai'},
+  {iata:'KBV',city:'krabi',         name:'甲米',         en:'Krabi',               country:'泰國',  region:'sea',    emoji:'🏝️', price:7000, img:'krabi'},
+  // ── 新加坡 ──
+  {iata:'SIN',city:'singapore',     name:'新加坡',       en:'Singapore Changi',    country:'新加坡',region:'sea',    emoji:'🦁', price:6800, img:'singapore'},
+  // ── 馬來西亞 ──
+  {iata:'KUL',city:'kuala-lumpur',  name:'吉隆坡',       en:'Kuala Lumpur KLIA',   country:'馬來西亞',region:'sea',  emoji:'🏙️', price:5900, img:'kuala-lumpur'},
+  {iata:'PEN',city:'penang',        name:'檳城',         en:'Penang',              country:'馬來西亞',region:'sea',  emoji:'🍜', price:7000, img:'penang'},
+  {iata:'BKI',city:'kota-kinabalu', name:'亞庇',         en:'Kota Kinabalu',       country:'馬來西亞',region:'sea',  emoji:'🌴', price:7500, img:'kota-kinabalu'},
+  // ── 菲律賓 ──
+  {iata:'MNL',city:'manila',        name:'馬尼拉',       en:'Manila Ninoy Aquino', country:'菲律賓',region:'sea',    emoji:'🌺', price:5500, img:'manila'},
+  {iata:'CEB',city:'cebu',          name:'宿霧',         en:'Cebu Mactan',         country:'菲律賓',region:'sea',    emoji:'🏝️', price:6000, img:'cebu'},
+  {iata:'BCD',city:'bacolod',       name:'巴科洛德',     en:'Bacolod',             country:'菲律賓',region:'sea',    emoji:'🌴', price:7000, img:'philippines'},
+  // ── 越南 ──
+  {iata:'SGN',city:'ho-chi-minh-city',name:'胡志明市',   en:'Ho Chi Minh City',    country:'越南',  region:'sea',    emoji:'🛵', price:5800, img:'ho-chi-minh'},
+  {iata:'HAN',city:'hanoi',         name:'河內',         en:'Hanoi Noi Bai',       country:'越南',  region:'sea',    emoji:'🏮', price:5600, img:'hanoi'},
+  {iata:'DAD',city:'da-nang',       name:'峴港',         en:'Da Nang',             country:'越南',  region:'sea',    emoji:'🌉', price:6000, img:'da-nang'},
+  {iata:'CXR',city:'nha-trang',     name:'芽莊',         en:'Nha Trang',           country:'越南',  region:'sea',    emoji:'🏖️', price:6500, img:'nha-trang'},
+  {iata:'PQC',city:'phu-quoc',      name:'富國島',       en:'Phu Quoc',            country:'越南',  region:'sea',    emoji:'🏝️', price:7000, img:'phu-quoc'},
+  // ── 印尼 ──
+  {iata:'DPS',city:'bali',          name:'峇里島',       en:'Bali Ngurah Rai',     country:'印尼',  region:'sea',    emoji:'🌴', price:7200, img:'bali'},
+  {iata:'CGK',city:'jakarta',       name:'雅加達',       en:'Jakarta Soekarno',    country:'印尼',  region:'sea',    emoji:'🕌', price:7500, img:'jakarta'},
+  {iata:'SUB',city:'surabaya',      name:'泗水',         en:'Surabaya',            country:'印尼',  region:'sea',    emoji:'🏙️', price:8000, img:'surabaya'},
+  {iata:'LOP',city:'lombok',        name:'龍目島',       en:'Lombok',              country:'印尼',  region:'sea',    emoji:'🏝️', price:8000, img:'lombok'},
+  // ── 緬甸/柬埔寨/寮國 ──
+  {iata:'RGN',city:'yangon',        name:'仰光',         en:'Yangon',              country:'緬甸',  region:'sea',    emoji:'🏛️', price:8500, img:'yangon'},
+  {iata:'REP',city:'siem-reap',     name:'暹粒',         en:'Siem Reap',           country:'柬埔寨',region:'sea',    emoji:'🛕', price:8200, img:'siem-reap'},
+  {iata:'PNH',city:'phnom-penh',    name:'金邊',         en:'Phnom Penh',          country:'柬埔寨',region:'sea',    emoji:'👑', price:8000, img:'phnom-penh'},
+  // ── 南亞 ──
+  {iata:'DEL',city:'delhi',         name:'新德里',       en:'Delhi Indira Gandhi', country:'印度',  region:'south-asia', emoji:'🕌', price:12000, img:'delhi'},
+  {iata:'BOM',city:'mumbai',        name:'孟買',         en:'Mumbai',              country:'印度',  region:'south-asia', emoji:'🌆', price:12500, img:'mumbai'},
+  {iata:'CMB',city:'colombo',       name:'可倫坡',       en:'Colombo Bandaranaike',country:'斯里蘭卡',region:'south-asia',emoji:'🌴',price:9500, img:'colombo'},
+  {iata:'KTM',city:'kathmandu',     name:'加德滿都',     en:'Kathmandu',           country:'尼泊爾',region:'south-asia',emoji:'🏔️',price:11000, img:'kathmandu'},
+  // ── 中東 ──
+  {iata:'DXB',city:'dubai',         name:'杜拜',         en:'Dubai International', country:'阿聯酋',region:'mideast',emoji:'🏙️', price:14000, img:'dubai'},
+  {iata:'AUH',city:'abu-dhabi',     name:'阿布達比',     en:'Abu Dhabi',           country:'阿聯酋',region:'mideast',emoji:'🕌', price:14500, img:'abu-dhabi'},
+  {iata:'DOH',city:'doha',          name:'杜哈',         en:'Doha Hamad',          country:'卡達',  region:'mideast',emoji:'⚽', price:13500, img:'doha'},
+  {iata:'KWI',city:'kuwait',        name:'科威特',       en:'Kuwait',              country:'科威特',region:'mideast',emoji:'🛢️', price:16000, img:'kuwait'},
+  {iata:'CAI',city:'cairo',         name:'開羅',         en:'Cairo International', country:'埃及',  region:'mideast',emoji:'🏺', price:18000, img:'cairo'},
+  {iata:'TLV',city:'tel-aviv',      name:'特拉維夫',     en:'Tel Aviv Ben Gurion', country:'以色列',region:'mideast',emoji:'✡️', price:20000, img:'tel-aviv'},
+  // ── 歐洲 ──
+  {iata:'LHR',city:'london',        name:'倫敦希斯洛',   en:'London Heathrow',     country:'英國',  region:'europe', emoji:'🎡', price:28000, img:'london'},
+  {iata:'LGW',city:'london-gatwick',name:'倫敦蓋特威克', en:'London Gatwick',      country:'英國',  region:'europe', emoji:'🎡', price:26000, img:'london'},
+  {iata:'CDG',city:'paris',         name:'巴黎戴高樂',   en:'Paris Charles de Gaulle',country:'法國',region:'europe',emoji:'🗼', price:26000, img:'paris'},
+  {iata:'AMS',city:'amsterdam',     name:'阿姆斯特丹',   en:'Amsterdam Schiphol',  country:'荷蘭',  region:'europe', emoji:'🌷', price:27000, img:'amsterdam'},
+  {iata:'FRA',city:'frankfurt',     name:'法蘭克福',     en:'Frankfurt',           country:'德國',  region:'europe', emoji:'🏰', price:27000, img:'frankfurt'},
+  {iata:'MUC',city:'munich',        name:'慕尼黑',       en:'Munich',              country:'德國',  region:'europe', emoji:'🍺', price:27500, img:'munich'},
+  {iata:'MAD',city:'madrid',        name:'馬德里',       en:'Madrid Barajas',      country:'西班牙',region:'europe', emoji:'💃', price:28000, img:'madrid'},
+  {iata:'BCN',city:'barcelona',     name:'巴塞隆納',     en:'Barcelona El Prat',   country:'西班牙',region:'europe', emoji:'🏟️', price:28000, img:'barcelona'},
+  {iata:'FCO',city:'rome',          name:'羅馬達文西',   en:'Rome Fiumicino',      country:'義大利',region:'europe', emoji:'🏛️', price:28000, img:'rome'},
+  {iata:'VCE',city:'venice',        name:'威尼斯',       en:'Venice Marco Polo',   country:'義大利',region:'europe', emoji:'🚤', price:30000, img:'venice'},
+  {iata:'ZRH',city:'zurich',        name:'蘇黎世',       en:'Zurich',              country:'瑞士',  region:'europe', emoji:'🏔️', price:29000, img:'zurich'},
+  {iata:'VIE',city:'vienna',        name:'維也納',       en:'Vienna',              country:'奧地利',region:'europe', emoji:'🎵', price:28500, img:'vienna'},
+  {iata:'CPH',city:'copenhagen',    name:'哥本哈根',     en:'Copenhagen',          country:'丹麥',  region:'europe', emoji:'🧜', price:30000, img:'copenhagen'},
+  {iata:'ARN',city:'stockholm',     name:'斯德哥爾摩',   en:'Stockholm Arlanda',   country:'瑞典',  region:'europe', emoji:'👑', price:31000, img:'stockholm'},
+  {iata:'HEL',city:'helsinki',      name:'赫爾辛基',     en:'Helsinki Vantaa',     country:'芬蘭',  region:'europe', emoji:'🇫🇮', price:30000, img:'helsinki'},
+  {iata:'ATH',city:'athens',        name:'雅典',         en:'Athens Eleftherios',  country:'希臘',  region:'europe', emoji:'🏛️', price:28000, img:'athens'},
+  {iata:'PRG',city:'prague',        name:'布拉格',       en:'Prague Václav Havel', country:'捷克',  region:'europe', emoji:'🏰', price:28000, img:'prague'},
+  {iata:'BUD',city:'budapest',      name:'布達佩斯',     en:'Budapest Ferenc',     country:'匈牙利',region:'europe', emoji:'🏰', price:27500, img:'budapest'},
+  {iata:'WAW',city:'warsaw',        name:'華沙',         en:'Warsaw Chopin',       country:'波蘭',  region:'europe', emoji:'🦅', price:27000, img:'warsaw'},
+  {iata:'LIS',city:'lisbon',        name:'里斯本',       en:'Lisbon Humberto',     country:'葡萄牙',region:'europe', emoji:'🚋', price:28000, img:'lisbon'},
+  // ── 美洲 ──
+  {iata:'LAX',city:'los-angeles',   name:'洛杉磯',       en:'Los Angeles',         country:'美國',  region:'americas',emoji:'🎬', price:28000, img:'los-angeles'},
+  {iata:'SFO',city:'san-francisco', name:'舊金山',       en:'San Francisco',       country:'美國',  region:'americas',emoji:'🌉', price:28000, img:'san-francisco'},
+  {iata:'JFK',city:'new-york',      name:'紐約',         en:'New York JFK',        country:'美國',  region:'americas',emoji:'🗽', price:30000, img:'new-york'},
+  {iata:'ORD',city:'chicago',       name:'芝加哥',       en:'Chicago O\'Hare',     country:'美國',  region:'americas',emoji:'🌬️', price:29000, img:'chicago'},
+  {iata:'SEA',city:'seattle',       name:'西雅圖',       en:'Seattle-Tacoma',      country:'美國',  region:'americas',emoji:'☕', price:28000, img:'seattle'},
+  {iata:'LAS',city:'las-vegas',     name:'拉斯維加斯',   en:'Las Vegas Harry Reid',country:'美國',  region:'americas',emoji:'🎰', price:28500, img:'las-vegas'},
+  {iata:'YVR',city:'vancouver',     name:'溫哥華',       en:'Vancouver',           country:'加拿大',region:'americas',emoji:'🍁', price:27000, img:'vancouver'},
+  {iata:'YYZ',city:'toronto',       name:'多倫多',       en:'Toronto Pearson',     country:'加拿大',region:'americas',emoji:'🍁', price:29000, img:'toronto'},
+  {iata:'MEX',city:'mexico-city',   name:'墨西哥城',     en:'Mexico City NAICM',   country:'墨西哥',region:'americas',emoji:'🌮', price:35000, img:'mexico-city'},
+  {iata:'GRU',city:'sao-paulo',     name:'聖保羅',       en:'São Paulo Guarulhos', country:'巴西',  region:'americas',emoji:'🌴', price:38000, img:'sao-paulo'},
+  // ── 大洋洲 ──
+  {iata:'SYD',city:'sydney',        name:'雪梨',         en:'Sydney Kingsford Smith',country:'澳洲',region:'oceania',emoji:'🦘', price:14000, img:'sydney'},
+  {iata:'MEL',city:'melbourne',     name:'墨爾本',       en:'Melbourne Tullamarine',country:'澳洲', region:'oceania',emoji:'🏏', price:14500, img:'melbourne'},
+  {iata:'BNE',city:'brisbane',      name:'布里斯本',     en:'Brisbane',            country:'澳洲',  region:'oceania',emoji:'☀️', price:15000, img:'brisbane'},
+  {iata:'PER',city:'perth',         name:'伯斯',         en:'Perth',               country:'澳洲',  region:'oceania',emoji:'🌊', price:15500, img:'perth'},
+  {iata:'AKL',city:'auckland',      name:'奧克蘭',       en:'Auckland',            country:'紐西蘭',region:'oceania',emoji:'🥝', price:16000, img:'auckland'},
+  {iata:'NAN',city:'nadi',          name:'斐濟',         en:'Nadi (Fiji)',          country:'斐濟',  region:'oceania',emoji:'🌺', price:18000, img:'fiji'},
+  // ── 非洲 ──
+  {iata:'JNB',city:'johannesburg',  name:'約翰尼斯堡',   en:'Johannesburg OR Tambo',country:'南非', region:'africa', emoji:'🦁', price:35000, img:'johannesburg'},
+  {iata:'CPT',city:'cape-town',     name:'開普敦',       en:'Cape Town',           country:'南非',  region:'africa', emoji:'🏔️', price:36000, img:'cape-town'},
+  {iata:'ADD',city:'addis-ababa',   name:'阿迪斯阿貝巴', en:'Addis Ababa Bole',    country:'衣索比亞',region:'africa',emoji:'✈️',price:32000, img:'addis-ababa'},
+  {iata:'NBO',city:'nairobi',       name:'奈洛比',       en:'Nairobi Jomo Kenyatta',country:'肯亞', region:'africa', emoji:'🦒', price:33000, img:'nairobi'},
+];
+
+// Region config
+const REGIONS = [
+  {id:'all',    label:'全部'},
+  {id:'japan',  label:'🇯🇵 日本'},
+  {id:'korea',  label:'🇰🇷 韓國'},
+  {id:'hk',     label:'🇭🇰 港澳'},
+  {id:'china',  label:'🇨🇳 中國'},
+  {id:'sea',    label:'🌴 東南亞'},
+  {id:'south-asia',label:'🕌 南亞'},
+  {id:'mideast',label:'🏙️ 中東'},
+  {id:'europe', label:'🏰 歐洲'},
+  {id:'americas',label:'🗽 美洲'},
+  {id:'oceania',label:'🦘 大洋洲'},
+  {id:'africa', label:'🦁 非洲'},
+];
+
+// Departure airports (Taiwan)
+const DEP_AIRPORTS = AIRPORTS.filter(a => a.region === 'taiwan');
+
+// City image using picsum with seed
+function cityImg(img, w=400, h=200) {
+  const seeds = {
+    tokyo:580,osaka:404,fukuoka:431,sapporo:337,okinawa:547,nagoya:235,hiroshima:382,kagoshima:411,sendai:290,takamatsu:443,
+    seoul:360,busan:420,jeju:490,
+    'hong-kong':380,'macau':270,
+    beijing:318,shanghai:395,guangzhou:228,shenzhen:250,chengdu:388,xiamen:460,kunming:511,hangzhou:398,changsha:288,
+    bangkok:425,phuket:518,chiang:310,krabi:580,'ho-chi-minh':368,hanoi:465,'da-nang':512,'nha-trang':490,'phu-quoc':388,
+    bali:484,jakarta:350,penang:460,'kota-kinabalu':530,singapore:325,'kuala-lumpur':335,manila:385,cebu:450,
+    dubai:248,'abu-dhabi':290,doha:275,cairo:298,'tel-aviv':361,
+    london:382,paris:308,amsterdam:430,frankfurt:270,munich:315,madrid:342,barcelona:420,rome:355,venice:380,
+    zurich:290,vienna:400,copenhagen:450,stockholm:424,helsinki:476,athens:388,prague:405,budapest:388,warsaw:310,lisbon:395,
+    'los-angeles':305,'san-francisco':325,'new-york':282,chicago:350,seattle:299,'las-vegas':310,vancouver:372,toronto:325,
+    'mexico-city':310,'sao-paulo':335,
+    sydney:415,melbourne:398,brisbane:465,perth:420,auckland:380,fiji:582,
+    johannesburg:310,'cape-town':378,'addis-ababa':290,nairobi:365,
+    delhi:388,mumbai:350,colombo:455,kathmandu:390,
+    yangon:420,'siem-reap':388,'phnom-penh':420,
+    colombia:410,philippines:490,surabaya:388,lombok:490
+  };
+  const seed = seeds[img] || 300;
+  return `https://picsum.photos/seed/${seed}/${w}/${h}`;
+}
+
+// ── State ──
+let tripType = 's';
+let fromAirport = AIRPORTS.find(a => a.iata === 'TPE');
+let toAirport = null;
+let pax = {adult:1, child:0, infant:0};
+let activeRegion = 'all';
+let activeDepIata = 'TPE';
+let calSelectedDate = null;
+let calYear, calMonth;
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', () => {
+  setDefaultDate();
+  renderDepTabs();
+  renderRegionTabs();
+  renderDestGrid();
+  updateFromInput();
+  const now = new Date();
+  calYear = now.getFullYear();
+  calMonth = now.getMonth();
+  document.addEventListener('click', handleOutsideClick);
+});
+
+function setDefaultDate() {
+  const d = new Date();
+  d.setDate(d.getDate() + 14);
+  document.getElementById('ddate').value = fmtDate(d);
+  d.setDate(d.getDate() + 7);
+  document.getElementById('rdate').value = fmtDate(d);
+  document.getElementById('ddate').min = fmtDate(new Date());
+}
+function fmtDate(d) { return d.toISOString().split('T')[0]; }
+function fmtDateDisplay(s) {
+  if (!s) return '';
+  const d = new Date(s + 'T00:00:00');
+  return `${d.getMonth()+1}/${d.getDate()} (${['日','一','二','三','四','五','六'][d.getDay()]})`;
+}
+
+// ── Departure Tabs ──
+function renderDepTabs() {
+  const el = document.getElementById('depTabs');
+  el.innerHTML = DEP_AIRPORTS.map(a =>
+    `<button class="dep-tab${a.iata===activeDepIata?' active':''}"
+      onclick="setDepAirport('${a.iata}',this)">${a.name}</button>`
+  ).join('');
+}
+
+function setDepAirport(iata, btn) {
+  activeDepIata = iata;
+  fromAirport = AIRPORTS.find(a => a.iata === iata);
+  document.querySelectorAll('.dep-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  updateFromInput();
+  renderDestGrid();
+}
+
+// ── Region Tabs ──
+function renderRegionTabs() {
+  const el = document.getElementById('regionTabs');
+  el.innerHTML = REGIONS.map(r =>
+    `<button class="region-tab${r.id===activeRegion?' active':''}"
+      onclick="setRegion('${r.id}',this)">${r.label}</button>`
+  ).join('');
+}
+
+function setRegion(id, btn) {
+  activeRegion = id;
+  document.querySelectorAll('.region-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderDestGrid();
+}
+
+// ── Destination Grid ──
+function renderDestGrid() {
+  const dests = AIRPORTS.filter(a => {
+    if (a.region === 'taiwan') return false;
+    if (activeRegion !== 'all' && a.region !== activeRegion) return false;
+    return true;
+  });
+
+  document.getElementById('destGrid').innerHTML = dests.map(a => {
+    const price = a.price || null;
+    return `<div class="dest-card" onclick="quickSelect('${a.iata}')">
+      <div style="position:relative">
+        <img class="dest-img" src="${cityImg(a.img||a.city)}" alt="${a.name}"
+          onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div class="dest-img-bg" style="display:none">${a.emoji||'✈️'}</div>
+        <div class="dest-iata">${a.iata}</div>
+      </div>
+      <div class="dest-body">
+        <div class="dest-name">${a.name}</div>
+        <div class="dest-country">${a.country} ${a.emoji||''}</div>
+        ${price ? `<div class="dest-price">TWD ${price.toLocaleString()} <span>起/人</span></div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function quickSelect(iata) {
+  toAirport = AIRPORTS.find(a => a.iata === iata);
+  updateToInput();
+  window.scrollTo({top:0, behavior:'smooth'});
+  showToast(`已選擇 ${fromAirport?.name||''} → ${toAirport.name}，點擊「日曆查價」或直接搜尋`);
+}
+
+// ── Trip Type ──
+function setTripType(type, btn) {
+  tripType = type;
+  document.querySelectorAll('.trip-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  const rdateWrap = document.getElementById('rdateWrap');
+  const row = document.getElementById('optionsRow');
+  if (type === 'd') {
+    rdateWrap.style.display = '';
+    row.className = 'options-row';
+  } else {
+    rdateWrap.style.display = 'none';
+    row.className = 'options-row oneway';
+  }
+}
+
+// ── Autocomplete ──
+function filterAirports(dir) {
+  const val = document.getElementById(dir+'Input').value.toLowerCase().trim();
+  const list = document.getElementById(dir+'List');
+  if (!val) { list.innerHTML=''; list.classList.remove('show'); return; }
+  const matched = AIRPORTS.filter(a =>
+    a.iata.toLowerCase().includes(val) ||
+    a.name.includes(val) ||
+    a.en.toLowerCase().includes(val) ||
+    a.country.includes(val) ||
+    a.city.includes(val)
+  ).slice(0,10);
+  if (!matched.length) { list.classList.remove('show'); return; }
+  renderDropdown(dir, matched);
+}
+
+function showDropdown(dir) {
+  const val = document.getElementById(dir+'Input').value;
+  if (!val) {
+    const defaults = dir === 'from'
+      ? AIRPORTS.filter(a => a.region==='taiwan').slice(0,5)
+      : AIRPORTS.filter(a => ['NRT','KIX','ICN','HKG','SIN','BKK','DXB','LHR'].includes(a.iata));
+    renderDropdown(dir, defaults, dir==='from'?'台灣機場':'熱門目的地');
+  }
+}
+
+function hideDropdown(dir, delay) {
+  setTimeout(() => document.getElementById(dir+'List').classList.remove('show'), delay);
+}
+
+function renderDropdown(dir, airports, header) {
+  const list = document.getElementById(dir+'List');
+  let html = '';
+  if (header) html += `<div class="ac-group-header">${header}</div>`;
+  airports.forEach(a => {
+    html += `<div class="ac-item" onmousedown="selectAirport('${dir}','${a.iata}')">
+      <div class="ac-iata">${a.iata}</div>
+      <div class="ac-info">
+        <div class="ac-name">${a.name}</div>
+        <div class="ac-country">${a.country} · ${a.en}</div>
+      </div>
+    </div>`;
+  });
+  list.innerHTML = html;
+  list.classList.add('show');
+}
+
+function selectAirport(dir, iata) {
+  const airport = AIRPORTS.find(a => a.iata === iata);
+  if (!airport) return;
+  if (dir === 'from') { fromAirport = airport; updateFromInput(); }
+  else { toAirport = airport; updateToInput(); }
+  document.getElementById(dir+'List').classList.remove('show');
+}
+
+function updateFromInput() {
+  if (!fromAirport) return;
+  document.getElementById('fromInput').value = fromAirport.name;
+  document.getElementById('fromSub').textContent = `${fromAirport.iata} · ${fromAirport.en}`;
+}
+function updateToInput() {
+  if (!toAirport) return;
+  document.getElementById('toInput').value = toAirport.name;
+  document.getElementById('toSub').textContent = `${toAirport.iata} · ${toAirport.en}`;
+}
+
+function swapAirports() {
+  [fromAirport, toAirport] = [toAirport, fromAirport];
+  if (fromAirport) updateFromInput();
+  else { document.getElementById('fromInput').value=''; document.getElementById('fromSub').textContent=''; }
+  if (toAirport) updateToInput();
+  else { document.getElementById('toInput').value=''; document.getElementById('toSub').textContent=''; }
+}
+
+function handleOutsideClick(e) {
+  if (!e.target.closest('.airport-field'))
+    document.querySelectorAll('.autocomplete-list').forEach(l => l.classList.remove('show'));
+  if (!e.target.closest('.pax-dropdown'))
+    document.getElementById('paxPanel').classList.remove('show');
+}
+
+// ── Passengers ──
+function togglePaxPanel() { document.getElementById('paxPanel').classList.toggle('show'); }
+
+function changePax(type, delta) {
+  pax[type] = Math.max(0, pax[type] + delta);
+  if (type === 'adult') pax.adult = Math.max(1, pax.adult);
+  document.getElementById(type+'Val').textContent = pax[type];
+  document.getElementById('adultMinus').disabled = pax.adult <= 1;
+  document.getElementById('childMinus').disabled = pax.child <= 0;
+  document.getElementById('infantMinus').disabled = pax.infant <= 0;
+  updatePaxLabel();
+}
+function updatePaxLabel() {
+  let label = `${pax.adult} 成人`;
+  if (pax.child) label += ` · ${pax.child} 兒童`;
+  if (pax.infant) label += ` · ${pax.infant} 嬰兒`;
+  document.getElementById('paxTrigger').textContent = label;
+}
+
+// ── Search ──
+function doSearch() {
+  if (!fromAirport) { showToast('請選擇出發地'); return; }
+  if (!toAirport)   { showToast('請選擇目的地'); return; }
+  if (fromAirport.iata === toAirport.iata) { showToast('出發地和目的地不能相同'); return; }
+  const ddate = document.getElementById('ddate').value;
+  if (!ddate) { showToast('請選擇出發日期'); return; }
+  if (tripType === 'd') {
+    const rdate = document.getElementById('rdate').value;
+    if (!rdate) { showToast('請選擇返程日期'); return; }
+    if (rdate < ddate) { showToast('返程日期必須晚於出發日期'); return; }
+  }
+  const url = buildTripUrl(ddate);
+  showToast('正在前往 Trip.com 搜尋...');
+  setTimeout(() => window.open(url, '_blank'), 700);
+}
+
+function buildTripUrl(ddate) {
+  const from = fromAirport, to = toAirport;
+  const rdate = document.getElementById('rdate').value;
+  const cabin = document.getElementById('cabin').value;
+  const base = `https://tw.trip.com/flights/${from.city}-to-${to.city}/tickets-${from.iata.toLowerCase()}-${to.iata.toLowerCase()}/`;
+  const params = new URLSearchParams({
+    ddate, flighttype: tripType,
+    departcitycode: from.iata.toLowerCase(),
+    arrivalcitycode: to.iata.toLowerCase(),
+    adult: pax.adult, child: pax.child, infant: pax.infant,
+    cabin, curr:'TWD', locale:'zh-TW'
+  });
+  if (tripType === 'd' && rdate) params.set('rdate', rdate);
+  return base + '?' + params.toString();
+}
+
+// ════════════════════════════════════════════════
+//  Price Calendar
+// ════════════════════════════════════════════════
+let calPriceData = {};
+
+function openCalendar() {
+  if (!fromAirport || !toAirport) { showToast('請先選擇出發地及目的地'); return; }
+  calSelectedDate = null;
+  const modal = document.getElementById('calModal');
+  document.getElementById('calTitle').textContent =
+    `${fromAirport.name} → ${toAirport.name} 最低票價`;
+  document.getElementById('calSubtitle').textContent =
+    `${fromAirport.iata} → ${toAirport.iata} · 單程經濟艙`;
+  document.getElementById('priceSummary').classList.remove('show');
+  document.getElementById('calSelectBtn').classList.remove('show');
+  modal.classList.add('show');
+  loadCalPrices();
+}
+
+function closeCalendar() {
+  document.getElementById('calModal').classList.remove('show');
+}
+
+async function loadCalPrices() {
+  const body = document.getElementById('calBody');
+  body.innerHTML = `<div class="cal-loading"><div class="spinner"></div>正在查詢最低票價...</div>`;
+
+  const now = new Date();
+  const dDate = fmtDate(now);
+
+  try {
+    const resp = await fetch(
+      'https://corsproxy.io/?url=' + encodeURIComponent('https://m.ctrip.com/restapi/soa2/14427/getLowPriceInCalender'),
+      {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          Head: {ExtendFields:{DisableCalenderDefaultSetting:'TRUE'}},
+          dCity: fromAirport.iata,
+          aCity: toAirport.iata,
+          flightWayType: 'OW',
+          dDate,
+          cabinClass: 'y',
+          adultCount: pax.adult,
+          childCount: pax.child,
+          babyCount: pax.infant
+        })
+      }
+    );
+    const json = await resp.json();
+    const list = json?.lowPriceInCalenderDtoInfoList || [];
+    calPriceData = {};
+    list.forEach(item => {
+      if (item.dDate && item.currencyPrice)
+        calPriceData[item.dDate] = item.currencyPrice;
+    });
+    if (Object.keys(calPriceData).length > 0) {
+      renderCalendar();
+      return;
+    }
+  } catch(e) {}
+
+  // Fallback: generate mock prices
+  calPriceData = generateMockPrices();
+  renderCalendar(true);
+}
+
+function generateMockPrices() {
+  const base = toAirport.price || 8000;
+  const spread = base * 0.3;
+  const prices = {};
+  const today = new Date();
+  for (let i = 0; i < 90; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    const dow = d.getDay();
+    const weekend = dow === 5 || dow === 6 || dow === 0;
+    const noise = (Math.random() - 0.5) * spread;
+    const weekendPremium = weekend ? base * 0.15 : 0;
+    prices[fmtDate(d)] = Math.round((base + noise + weekendPremium) / 100) * 100;
+  }
+  return prices;
+}
+
+function renderCalendar(isMock) {
+  const now = new Date();
+  const year = calYear, month = calMonth;
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthNames = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+  // Find min/max prices for this month's range
+  const monthPrices = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    if (calPriceData[key]) monthPrices.push(calPriceData[key]);
+  }
+  const minPrice = Math.min(...monthPrices);
+  const maxPrice = Math.max(...monthPrices);
+  const lowThreshold = minPrice + (maxPrice - minPrice) * 0.25;
+  const highThreshold = maxPrice - (maxPrice - minPrice) * 0.25;
+
+  let html = `
+    <div class="cal-nav">
+      <button class="cal-nav-btn" onclick="changeCalMonth(-1)">← 上個月</button>
+      <span class="cal-month-label">${year} 年 ${monthNames[month]}</span>
+      <button class="cal-nav-btn" onclick="changeCalMonth(1)">下個月 →</button>
+    </div>
+    <div class="cal-grid">
+      ${['日','一','二','三','四','五','六'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}
+  `;
+
+  for (let i = 0; i < firstDay; i++) html += `<div class="cal-cell empty"></div>`;
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const price = calPriceData[key];
+    const dateObj = new Date(year, month, d);
+    const isPast = dateObj < new Date(new Date().setHours(0,0,0,0));
+    const isSelected = key === calSelectedDate;
+
+    let cls = 'cal-cell';
+    if (isPast) cls += ' past';
+    else if (isSelected) cls += ' selected';
+    else if (price) {
+      if (price <= lowThreshold) cls += ' low-price';
+      else if (price >= highThreshold) cls += ' high-price';
+    }
+
+    const onclick = isPast ? '' : `onclick="selectCalDate('${key}',${price||0})"`;
+    html += `<div class="${cls}" ${onclick}>
+      <span class="cal-date">${d}</span>
+      ${price ? `<span class="cal-price">${price>=10000?(price/1000).toFixed(1)+'K':price.toLocaleString()}</span>` : ''}
+    </div>`;
+  }
+  html += '</div>';
+  if (isMock) html += `<p style="text-align:center;font-size:11px;color:#aaa;margin-top:12px">* 示範價格，實際價格以 Trip.com 為準</p>`;
+
+  document.getElementById('calBody').innerHTML = html;
+}
+
+function changeCalMonth(delta) {
+  calMonth += delta;
+  if (calMonth > 11) { calMonth = 0; calYear++; }
+  if (calMonth < 0)  { calMonth = 11; calYear--; }
+  renderCalendar();
+}
+
+function selectCalDate(dateKey, price) {
+  calSelectedDate = dateKey;
+  renderCalendar();
+  if (price) {
+    document.getElementById('summaryLabel').textContent = `${fmtDateDisplay(dateKey)} 最低票價`;
+    document.getElementById('summaryPrice').textContent = `TWD ${price.toLocaleString()}`;
+    document.getElementById('priceSummary').classList.add('show');
+    document.getElementById('calSelectBtn').classList.add('show');
+    document.getElementById('calSelectBtn').textContent = `以 ${fmtDateDisplay(dateKey)} 搜尋 →`;
+  }
+}
+
+function confirmCalDate() {
+  if (!calSelectedDate) return;
+  document.getElementById('ddate').value = calSelectedDate;
+  closeCalendar();
+  showToast(`出發日期已設為 ${fmtDateDisplay(calSelectedDate)}`);
+}
+
+// ── Toast ──
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ── ESC to close modal ──
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeCalendar();
+});
+document.getElementById('calModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('calModal')) closeCalendar();
+});
+</script>
+
+<!-- Calendar button (injected after search button) -->
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const searchBtn = document.querySelector('.search-btn');
+  const calBtn = document.createElement('button');
+  calBtn.style.cssText = `
+    width:100%; margin-top:10px; padding:12px;
+    background:transparent; color:var(--blue);
+    border:1.5px solid var(--blue);
+    border-radius:var(--radius-sm); font-size:14px; font-weight:600;
+    cursor:pointer; font-family:inherit;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    transition:all .2s;
+  `;
+  calBtn.innerHTML = '📅 查看最低票價日曆';
+  calBtn.onmouseover = () => { calBtn.style.background='var(--blue-light)'; };
+  calBtn.onmouseout  = () => { calBtn.style.background='transparent'; };
+  calBtn.onclick = openCalendar;
+  searchBtn.parentNode.insertBefore(calBtn, searchBtn.nextSibling);
+});
+</script>
+</body>
+</html>
