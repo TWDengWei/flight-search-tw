@@ -86,6 +86,32 @@
     .search-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(0,102,204,.35)}
     .search-btn svg{width:22px;height:22px}
 
+    /* Platform buttons */
+    .platform-btns{display:flex;gap:10px;margin-top:10px}
+    .platform-btn{flex:1;padding:13px;border:1.5px solid var(--border);background:var(--white);border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .2s}
+    .platform-btn:hover{transform:translateY(-1px)}
+    .platform-btn.trip{color:#0066cc;border-color:#0066cc}
+    .platform-btn.trip:hover{background:#e8f0fb;box-shadow:0 4px 12px rgba(0,102,204,.2)}
+    .platform-btn.sky{color:#00a5e0;border-color:#00a5e0}
+    .platform-btn.sky:hover{background:#e6f7fd;box-shadow:0 4px 12px rgba(0,165,224,.2)}
+    .platform-btn img.platform-logo{height:16px;vertical-align:middle}
+
+    /* Results panel */
+    .results-panel{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);max-width:960px;margin:24px auto 0;padding:0;overflow:hidden;display:none}
+    .results-panel.show{display:block}
+    .results-header{padding:16px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:#f8fafc}
+    .results-title{font-size:15px;font-weight:700}
+    .results-subtitle{font-size:13px;color:var(--text-muted)}
+    .results-links{display:flex;gap:10px;padding:16px 24px;flex-wrap:wrap}
+    .result-link-card{flex:1;min-width:200px;border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:16px 20px;text-decoration:none;color:var(--text);display:flex;align-items:center;justify-content:space-between;transition:all .2s;background:var(--white)}
+    .result-link-card:hover{border-color:var(--blue);box-shadow:var(--shadow-sm);transform:translateY(-2px)}
+    .result-link-card.sky-card:hover{border-color:#00a5e0}
+    .result-link-platform{font-size:13px;font-weight:700;margin-bottom:4px}
+    .result-link-desc{font-size:12px;color:var(--text-muted)}
+    .result-link-arrow{font-size:18px;color:var(--text-muted)}
+    .sky-badge{display:inline-block;background:#00a5e0;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;margin-right:6px}
+    .trip-badge{display:inline-block;background:#0066cc;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;margin-right:6px}
+
     /* Main */
     .main{max-width:1200px;margin:0 auto;padding:48px 24px}
     .section-title{font-size:22px;font-weight:700;margin-bottom:20px;display:flex;align-items:center;gap:12px}
@@ -292,14 +318,36 @@
         </select>
       </div>
     </div>
-    <button class="search-btn" onclick="doSearch()">
+    <button class="search-btn" onclick="searchOn('both')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
-      搜尋機票
+      比較所有平台
     </button>
+    <div class="platform-btns">
+      <button class="platform-btn trip" onclick="searchOn('trip')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.5 19.79 19.79 0 01.12 1.18 2 2 0 012.1 0h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 14.92z"/></svg>
+        Trip.com 搜尋
+      </button>
+      <button class="platform-btn sky" onclick="searchOn('sky')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Skyscanner 搜尋
+      </button>
+    </div>
   </div>
 </section>
+
+<!-- Search Results Panel -->
+<div class="results-panel" id="resultsPanel">
+  <div class="results-header">
+    <div>
+      <div class="results-title" id="resultsTitle">搜尋結果</div>
+      <div class="results-subtitle" id="resultsSubtitle"></div>
+    </div>
+    <button onclick="document.getElementById('resultsPanel').classList.remove('show')" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--text-muted)">✕</button>
+  </div>
+  <div class="results-links" id="resultsLinks"></div>
+</div>
 
 <!-- Main -->
 <main class="main">
@@ -658,7 +706,7 @@ function quickSelect(iata) {
   toAirport = AIRPORTS.find(a => a.iata === iata);
   updateToInput();
   window.scrollTo({top:0, behavior:'smooth'});
-  showToast(`已選擇 ${fromAirport?.name||''} → ${toAirport.name}，點擊「日曆查價」或直接搜尋`);
+  showToast(`已選擇 ${fromAirport?.name||''} → ${toAirport.name}，點擊「比較所有平台」搜尋`);
 }
 
 // ── Trip Type ──
@@ -777,23 +825,38 @@ function updatePaxLabel() {
   document.getElementById('paxTrigger').textContent = label;
 }
 
-// ── Search ──
-function doSearch() {
-  if (!fromAirport) { showToast('請選擇出發地'); return; }
-  if (!toAirport)   { showToast('請選擇目的地'); return; }
-  if (fromAirport.iata === toAirport.iata) { showToast('出發地和目的地不能相同'); return; }
-  const ddate = document.getElementById('ddate').value;
-  if (!ddate) { showToast('請選擇出發日期'); return; }
-  if (tripType === 'd') {
-    const rdate = document.getElementById('rdate').value;
-    if (!rdate) { showToast('請選擇返程日期'); return; }
-    if (rdate < ddate) { showToast('返程日期必須晚於出發日期'); return; }
-  }
-  const url = buildTripUrl(ddate);
-  showToast('正在前往 Trip.com 搜尋...');
-  setTimeout(() => window.open(url, '_blank'), 700);
+// ════════════════════════════════════════════════
+//  Skyscanner API Config
+//  官方 Partner API (需申請)：
+//    POST https://partners.api.skyscanner.net/apiservices/v3/flights/live/search/create
+//    Header: x-api-key: <your-key>
+//  可在下方填入 RapidAPI key 啟用即時查詢
+// ════════════════════════════════════════════════
+const SKYSCANNER_RAPIDAPI_KEY = ''; // 填入 RapidAPI key 啟用即時價格
+
+// ── Skyscanner URL builder ──
+function buildSkyscannerUrl(ddate) {
+  const from = fromAirport, to = toAirport;
+  const rdate = document.getElementById('rdate').value;
+  const cabinMap = { y:'economy', s:'premiumeconomy', c:'business', f:'first' };
+  const cabin = cabinMap[document.getElementById('cabin').value] || 'economy';
+  const dateStr = ddate.replace(/-/g, ''); // YYYYMMDD
+  let url = `https://www.skyscanner.com.tw/transport/flights/${from.iata.toLowerCase()}/${to.iata.toLowerCase()}/${dateStr}/`;
+  if (tripType === 'd' && rdate) url += `${rdate.replace(/-/g,'')}/`;
+  const params = new URLSearchParams({
+    adults: pax.adult,
+    children: pax.child,
+    infants: pax.infant,
+    cabinclass: cabin,
+    currency: 'TWD',
+    locale: 'zh-TW',
+    rtn: tripType === 'd' ? 1 : 0,
+    preferdirects: 'false'
+  });
+  return url + '?' + params.toString();
 }
 
+// ── Trip.com URL builder ──
 function buildTripUrl(ddate) {
   const from = fromAirport, to = toAirport;
   const rdate = document.getElementById('rdate').value;
@@ -809,6 +872,81 @@ function buildTripUrl(ddate) {
   if (tripType === 'd' && rdate) params.set('rdate', rdate);
   return base + '?' + params.toString();
 }
+
+// ── Validate form ──
+function validateSearch() {
+  if (!fromAirport) { showToast('請選擇出發地'); return false; }
+  if (!toAirport)   { showToast('請選擇目的地'); return false; }
+  if (fromAirport.iata === toAirport.iata) { showToast('出發地和目的地不能相同'); return false; }
+  const ddate = document.getElementById('ddate').value;
+  if (!ddate) { showToast('請選擇出發日期'); return false; }
+  if (tripType === 'd') {
+    const rdate = document.getElementById('rdate').value;
+    if (!rdate) { showToast('請選擇返程日期'); return false; }
+    if (rdate < ddate) { showToast('返程日期必須晚於出發日期'); return false; }
+  }
+  return true;
+}
+
+// ── Main search dispatcher ──
+function searchOn(platform) {
+  if (!validateSearch()) return;
+  const ddate = document.getElementById('ddate').value;
+  const rdate = document.getElementById('rdate').value;
+  const from = fromAirport, to = toAirport;
+
+  const tripUrl = buildTripUrl(ddate);
+  const skyUrl  = buildSkyscannerUrl(ddate);
+
+  if (platform === 'trip') {
+    showToast('正在前往 Trip.com 搜尋...');
+    setTimeout(() => window.open(tripUrl, '_blank'), 500);
+    return;
+  }
+  if (platform === 'sky') {
+    showToast('正在前往 Skyscanner 搜尋...');
+    setTimeout(() => window.open(skyUrl, '_blank'), 500);
+    return;
+  }
+
+  // platform === 'both' → 顯示比較面板
+  const tripType_label = tripType === 'd' ? '來回' : '單程';
+  const dateLabel = tripType === 'd' && rdate
+    ? `${fmtDateDisplay(ddate)} → ${fmtDateDisplay(rdate)}`
+    : fmtDateDisplay(ddate);
+  const paxLabel = `${pax.adult}成人${pax.child?` · ${pax.child}兒童`:''}${pax.infant?` · ${pax.infant}嬰兒`:''}`;
+  const cabinLabel = { y:'經濟艙', s:'豪華經濟', c:'商務艙', f:'頭等艙' }[document.getElementById('cabin').value];
+
+  document.getElementById('resultsTitle').textContent =
+    `${from.name} → ${to.name}`;
+  document.getElementById('resultsSubtitle').textContent =
+    `${tripType_label} · ${dateLabel} · ${paxLabel} · ${cabinLabel}`;
+
+  document.getElementById('resultsLinks').innerHTML = `
+    <a class="result-link-card" href="${tripUrl}" target="_blank" rel="noopener">
+      <div>
+        <div class="result-link-platform"><span class="trip-badge">Trip.com</span>攜程旅行</div>
+        <div class="result-link-desc">全球最大中文旅遊平台，支援中文客服</div>
+      </div>
+      <span class="result-link-arrow">→</span>
+    </a>
+    <a class="result-link-card sky-card" href="${skyUrl}" target="_blank" rel="noopener">
+      <div>
+        <div class="result-link-platform"><span class="sky-badge">Skyscanner</span>史凱斯康納</div>
+        <div class="result-link-desc">全球最大機票比價，覆蓋更多航空公司</div>
+      </div>
+      <span class="result-link-arrow">→</span>
+    </a>
+  `;
+
+  const panel = document.getElementById('resultsPanel');
+  panel.classList.add('show');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  showToast(`已找到 ${from.name} → ${to.name} 的搜尋結果`);
+}
+
+// 向後相容
+function doSearch() { searchOn('both'); }
 
 // ════════════════════════════════════════════════
 //  Price Calendar
