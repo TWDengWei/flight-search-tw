@@ -219,6 +219,17 @@
       .fc-price-amt{font-size:18px}
     }
 
+    /* API Key Setup Banner */
+    .key-banner{background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#e2e8f0;padding:12px 24px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:13px}
+    .key-banner a{color:#60a5fa;font-weight:600}
+    .key-input-wrap{display:flex;gap:8px;flex:1;min-width:260px}
+    .key-input{flex:1;padding:7px 12px;border:1.5px solid #334155;border-radius:var(--radius-sm);background:#1e293b;color:#e2e8f0;font-size:13px;font-family:inherit;outline:none}
+    .key-input:focus{border-color:#60a5fa}
+    .key-save-btn{padding:7px 14px;background:#2563eb;color:#fff;border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
+    .key-status{font-size:12px;padding:3px 8px;border-radius:4px;font-weight:600}
+    .key-ok{background:#166534;color:#bbf7d0}
+    .key-none{background:#7c3aed;color:#ede9fe}
+
     /* Calendar modal */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:none;align-items:center;justify-content:center;padding:20px}
     .modal-overlay.show{display:flex}
@@ -312,6 +323,21 @@
     </nav>
   </div>
 </header>
+
+<!-- Skyscanner API Key Banner -->
+<div class="key-banner" id="keyBanner">
+  <span>🔑 Skyscanner 即時資料</span>
+  <span class="key-status key-none" id="keyStatusBadge">未設定</span>
+  <div class="key-input-wrap">
+    <input class="key-input" id="keyInput" type="password"
+           placeholder="貼上 RapidAPI key 啟用即時票價（sky-scrapper 免費 500次/月）"
+           oninput="previewKey(this.value)">
+    <button class="key-save-btn" onclick="saveApiKey()">套用</button>
+  </div>
+  <a href="https://rapidapi.com/apiheya/api/sky-scrapper" target="_blank" rel="noopener">
+    免費申請 →
+  </a>
+</div>
 
 <!-- Hero + Search -->
 <section class="hero">
@@ -1074,13 +1100,22 @@ function submitCISearch(fromA, toA, ddate, rdate, paxObj, tripT, cabin) {
 }
 
 // ════════════════════════════════════════════════
-//  Skyscanner API Config
-//  官方 Partner API (需申請)：
+//  Skyscanner via RapidAPI (sky-scrapper)
+//
+//  純前端無法繞過 Skyscanner API key：
+//  - 官方 Partner API 需申請審核
+//  - 內部 Web API 有嚴格 CORS + CSRF 防護
+//
+//  最佳替代方案 → RapidAPI sky-scrapper（免費 500次/月）
+//    1. 前往 https://rapidapi.com/apiheya/api/sky-scrapper
+//    2. 註冊免費帳號 → Subscribe to Basic (Free)
+//    3. 複製 X-RapidAPI-Key 貼入下方
+//
+//  官方 Partner API（二選一）：
 //    POST https://partners.api.skyscanner.net/apiservices/v3/flights/live/search/create
-//    Header: x-api-key: <your-key>
-//  可在下方填入 RapidAPI key 啟用即時查詢
+//    Header: x-api-key: <partner-key>
 // ════════════════════════════════════════════════
-const SKYSCANNER_RAPIDAPI_KEY = ''; // 填入 RapidAPI key 啟用即時價格
+const SKYSCANNER_RAPIDAPI_KEY = ''; // ← 貼上 RapidAPI key（免費）
 
 // ── Skyscanner URL builder ──
 function buildSkyscannerUrl(ddate) {
@@ -1444,6 +1479,54 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2800);
 }
 
+// ════════════════════════════════════════════════
+//  RapidAPI Key 管理（localStorage 持久化）
+// ════════════════════════════════════════════════
+(function initApiKey() {
+  const saved = localStorage.getItem('sky_rapidapi_key');
+  if (saved) {
+    // 注意：SKYSCANNER_RAPIDAPI_KEY 是 const，用 window 物件覆蓋
+    window._skyKey = saved;
+    _updateKeyUI(saved);
+  }
+})();
+
+// 讓 fetchSky 讀取動態 key
+function _getSkyKey() {
+  return window._skyKey || SKYSCANNER_RAPIDAPI_KEY || '';
+}
+
+function previewKey(val) {
+  const badge = document.getElementById('keyStatusBadge');
+  if (val.length > 10) {
+    badge.className = 'key-status key-ok';
+    badge.textContent = '待套用';
+  } else {
+    badge.className = 'key-status key-none';
+    badge.textContent = '未設定';
+  }
+}
+
+function saveApiKey() {
+  const val = document.getElementById('keyInput').value.trim();
+  if (!val) { showToast('請輸入 RapidAPI key'); return; }
+  window._skyKey = val;
+  localStorage.setItem('sky_rapidapi_key', val);
+  _updateKeyUI(val);
+  showToast('✓ Skyscanner API key 已儲存，重新搜尋即可使用即時資料');
+}
+
+function _updateKeyUI(key) {
+  const badge = document.getElementById('keyStatusBadge');
+  const input = document.getElementById('keyInput');
+  if (key) {
+    badge.className = 'key-status key-ok';
+    badge.textContent = '已啟用';
+    input.value = key.substring(0,6) + '••••••••••••••••';
+    input.placeholder = '已設定（重新輸入可更新）';
+  }
+}
+
 // ── ESC to close modal ──
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeCalendar();
@@ -1688,43 +1771,146 @@ async function fetchTripPrice(from, to, ddate, paxObj) {
   return null;
 }
 
-// ── Skyscanner Indicative Prices API ──
-// 官方端點: POST https://partners.api.skyscanner.net/apiservices/v3/flights/indicative/search
-// Header: x-api-key: <your-key>
-// 填入 SKYSCANNER_RAPIDAPI_KEY 啟用即時查詢
+// ════════════════════════════════════════════════
+//  Skyscanner 資料取得策略
+//  按優先順序嘗試：
+//  1. sky-scrapper (RapidAPI) — searchFlights  ← 最完整，含班次
+//  2. skyscanner44 (RapidAPI) — searchFlights  ← 備用
+//  3. 官方 Indicative API     — 需 Partner key
+//  4. Fallback → 估算價格（不需 key）
+// ════════════════════════════════════════════════
 async function fetchSkyPrice(from, to, ddate, paxObj) {
-  if (!SKYSCANNER_RAPIDAPI_KEY) return null;
-  const PROXIES  = ['https://corsproxy.io/?url='];
-  const ENDPOINT = 'https://partners.api.skyscanner.net/apiservices/v3/flights/indicative/search';
-  const [year, month, day] = ddate.split('-').map(Number);
-  const body = {
-    query: {
-      currency: 'TWD', locale: 'zh-TW', market: 'TW',
-      dateTimeGroupingType: 'DATE_TIME_GROUPING_TYPE_BY_DATE',
-      queryLegs: [{
-        originPlace:      { queryPlace: { iata: from.iata } },
-        destinationPlace: { queryPlace: { iata: to.iata } },
-        fixedDate: { year, month, day }
-      }]
-    }
-  };
-  for (const proxy of PROXIES) {
-    try {
-      const r = await fetch(proxy + encodeURIComponent(ENDPOINT), {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json', 'x-api-key': SKYSCANNER_RAPIDAPI_KEY },
-        body: JSON.stringify(body)
-      });
-      if (!r.ok) continue;
-      const json = await r.json();
-      // 解析 indicative price response
-      const quotes = json?.content?.results?.quotes || {};
-      const prices = Object.values(quotes)
-        .map(q => q?.minPrice?.amount)
-        .filter(p => p && p > 0);
+  if (!_getSkyKey()) return null;
+
+  // ── 策略 1: sky-scrapper (最完整) ──
+  // GET https://sky-scrapper.p.rapidapi.com/api/v2/flights/searchFlights
+  // 需先用 /api/v1/flights/searchAirport 取得 entityId
+  // 為了效率，先嘗試策略 2（不需 entityId）
+  const result2 = await _fetchSkyscanner44(from, to, ddate, paxObj);
+  if (result2 !== null) return result2;
+
+  // ── 策略 2: sky-scrapper v1（直接用 IATA） ──
+  const result1 = await _fetchSkyScrapper(from, to, ddate, paxObj);
+  if (result1 !== null) return result1;
+
+  // ── 策略 3: 官方 Indicative API ──
+  return await _fetchSkyOfficial(from, to, ddate, paxObj);
+}
+
+async function _fetchSkyscanner44(from, to, ddate, paxObj) {
+  // skyscanner44.p.rapidapi.com — 免費 200次/月
+  // GET /api/v1/flights/searchFlights?origin=TPE&destination=NRT&date=2026-05-01&...
+  try {
+    const params = new URLSearchParams({
+      origin:      from.iata,
+      destination: to.iata,
+      date:        ddate,
+      adults:      paxObj.adult,
+      children:    paxObj.child  || 0,
+      infants:     paxObj.infant || 0,
+      currency:    'TWD',
+      locale:      'zh-TW',
+      market:      'TW',
+      countryCode: 'TW'
+    });
+    const r = await fetch(
+      `https://skyscanner44.p.rapidapi.com/api/v1/flights/searchFlights?${params}`,
+      { headers: {
+          'x-rapidapi-key':  _getSkyKey(),
+          'x-rapidapi-host': 'skyscanner44.p.rapidapi.com'
+        }
+      }
+    );
+    if (!r.ok) return null;
+    const json = await r.json();
+    return _parseSkyResult(json);
+  } catch(e) { return null; }
+}
+
+async function _fetchSkyScrapper(from, to, ddate, paxObj) {
+  // sky-scrapper.p.rapidapi.com — 免費 500次/月
+  // GET /api/v1/flights/searchFlights?originSkyId=TPE&destinationSkyId=NRT&...
+  try {
+    const params = new URLSearchParams({
+      originSkyId:      from.iata,
+      destinationSkyId: to.iata,
+      originEntityId:   '',         // 可為空，API 會自動解析
+      destinationEntityId: '',
+      date:             ddate,
+      adults:           paxObj.adult,
+      children:         paxObj.child  || 0,
+      infants:          paxObj.infant || 0,
+      currency:         'TWD',
+      locale:           'zh-TW',
+      market:           'TW',
+      cabinClass:       'economy',
+      countryCode:      'TW'
+    });
+    const r = await fetch(
+      `https://sky-scrapper.p.rapidapi.com/api/v1/flights/searchFlights?${params}`,
+      { headers: {
+          'x-rapidapi-key':  _getSkyKey(),
+          'x-rapidapi-host': 'sky-scrapper.p.rapidapi.com'
+        }
+      }
+    );
+    if (!r.ok) return null;
+    const json = await r.json();
+    return _parseSkyResult(json);
+  } catch(e) { return null; }
+}
+
+async function _fetchSkyOfficial(from, to, ddate, paxObj) {
+  // partners.api.skyscanner.net — 需 Partner API key
+  try {
+    const [year, month, day] = ddate.split('-').map(Number);
+    const r = await fetch(
+      'https://partners.api.skyscanner.net/apiservices/v3/flights/indicative/search',
+      { method:'POST',
+        headers: { 'Content-Type':'application/json', 'x-api-key': _getSkyKey() },
+        body: JSON.stringify({
+          query: {
+            currency: 'TWD', locale: 'zh-TW', market: 'TW',
+            dateTimeGroupingType: 'DATE_TIME_GROUPING_TYPE_BY_DATE',
+            queryLegs: [{
+              originPlace:      { queryPlace: { iata: from.iata } },
+              destinationPlace: { queryPlace: { iata: to.iata } },
+              fixedDate: { year, month, day }
+            }]
+          }
+        })
+      }
+    );
+    if (!r.ok) return null;
+    const json = await r.json();
+    const quotes = json?.content?.results?.quotes || {};
+    const prices = Object.values(quotes).map(q => q?.minPrice?.amount).filter(p => p > 0);
+    return prices.length ? Math.min(...prices) : null;
+  } catch(e) { return null; }
+}
+
+// 解析 sky-scrapper / skyscanner44 共用回應格式
+function _parseSkyResult(json) {
+  try {
+    // 格式 A: itineraries[].price.raw
+    const itins = json?.data?.itineraries || json?.itineraries || [];
+    if (itins.length) {
+      const prices = itins.map(i => i?.price?.raw || i?.rawPrice).filter(p => p > 0);
       if (prices.length) return Math.min(...prices);
-    } catch(e) { continue; }
-  }
+    }
+    // 格式 B: flightQuotes[].minPrice
+    const quotes = json?.data?.flightQuotes || json?.flightQuotes || [];
+    if (quotes.length) {
+      const prices = quotes.map(q => q?.minPrice || q?.price).filter(p => p > 0);
+      if (prices.length) return Math.min(...prices);
+    }
+    // 格式 C: content.results.itineraries
+    const ctxItins = Object.values(json?.content?.results?.itineraries || {});
+    if (ctxItins.length) {
+      const prices = ctxItins.map(i => i?.pricingOptions?.[0]?.price?.amount).filter(p => p > 0);
+      if (prices.length) return Math.min(...prices);
+    }
+  } catch(e) {}
   return null;
 }
 
