@@ -1745,175 +1745,90 @@ async function _runSearch(src) {
 }
 
 // ── Trip.com SOA2 價格 API ──
+// Trip.com 回傳 Access-Control-Allow-Origin: * → 瀏覽器可直接呼叫，不需 CORS proxy
+// credentials:'include' 自動帶入使用者的 Trip.com cookies（解決 session NPE）
 async function fetchTripPrice(from, to, ddate, paxObj) {
-  const PROXIES   = ['https://corsproxy.io/?url=', 'https://api.allorigins.win/raw?url='];
-  const ENDPOINT  = 'https://m.ctrip.com/restapi/soa2/14427/getLowPriceInCalender';
+  const ENDPOINT = 'https://m.ctrip.com/restapi/soa2/14427/getLowPriceInCalender';
   const body = {
-    Head: { ExtendFields:{ DisableCalenderDefaultSetting:'TRUE' } },
+    Head: {
+      Locale: 'zh_TW',
+      Source: 'Online',
+      Currency: 'TWD',
+      SiteID: 2,
+      ExtendFields: { DisableCalenderDefaultSetting: 'TRUE' }
+    },
     dCity: from.iata, aCity: to.iata,
     flightWayType: 'OW', dDate: ddate,
     cabinClass: 'y',
-    adultCount: paxObj.adult, childCount: paxObj.child, babyCount: paxObj.infant
+    adultCount: paxObj.adult, childCount: paxObj.child || 0, babyCount: paxObj.infant || 0
   };
-  for (const proxy of PROXIES) {
-    try {
-      const r = await fetch(proxy + encodeURIComponent(ENDPOINT), {
-        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
-      });
-      if (!r.ok) { console.warn(`[Trip.com] proxy ${proxy} HTTP ${r.status}`); continue; }
-      const json = await r.json();
-      console.log('[Trip.com] 回應:', json);
-      const list = json?.lowPriceInCalenderDtoInfoList || [];
-      const exact = list.find(i => i.dDate === ddate);
-      if (exact?.currencyPrice) return exact.currencyPrice;
-      const nearby = list.filter(i => i.currencyPrice && i.dDate >= ddate)
-        .sort((a,b) => a.dDate.localeCompare(b.dDate));
-      if (nearby.length) return nearby[0].currencyPrice;
-    } catch(e) { console.warn('[Trip.com] 例外:', e); continue; }
-  }
+  try {
+    const r = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',   // 帶入 Trip.com cookies（登入/匿名 session）
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) { console.warn(`[Trip.com] HTTP ${r.status}`); return null; }
+    const json = await r.json();
+    console.log('[Trip.com] 回應:', json);
+    const list = json?.lowPriceInCalenderDtoInfoList || [];
+    const exact = list.find(i => i.dDate === ddate);
+    if (exact?.currencyPrice) return exact.currencyPrice;
+    const nearby = list.filter(i => i.currencyPrice && i.dDate >= ddate)
+      .sort((a, b) => a.dDate.localeCompare(b.dDate));
+    if (nearby.length) return nearby[0].currencyPrice;
+  } catch(e) { console.warn('[Trip.com] 例外:', e); }
   return null;
 }
 
 // ════════════════════════════════════════════════
 //  Skyscanner 資料取得策略
-//  按優先順序嘗試：
-//  1. sky-scrapper (RapidAPI) — searchFlights  ← 最完整，含班次
-//  2. skyscanner44 (RapidAPI) — searchFlights  ← 備用
-//  3. 官方 Indicative API     — 需 Partner key
-//  4. Fallback → 估算價格（不需 key）
+//  使用 sky-scrapper getPriceCalendar（已驗證可用，不觸發 bot 防護）
+//  GET sky-scrapper.p.rapidapi.com/api/v1/flights/getPriceCalendar
 // ════════════════════════════════════════════════
 async function fetchSkyPrice(from, to, ddate, paxObj) {
   if (!_getSkyKey()) return null;
-
-  // ── 策略 1: sky-scrapper (最完整) ──
-  // GET https://sky-scrapper.p.rapidapi.com/api/v2/flights/searchFlights
-  // 需先用 /api/v1/flights/searchAirport 取得 entityId
-  // 為了效率，先嘗試策略 2（不需 entityId）
-  const result2 = await _fetchSkyscanner44(from, to, ddate, paxObj);
-  if (result2 !== null) return result2;
-
-  // ── 策略 2: sky-scrapper v1（直接用 IATA） ──
-  const result1 = await _fetchSkyScrapper(from, to, ddate, paxObj);
-  if (result1 !== null) return result1;
-
-  // ── 策略 3: 官方 Indicative API ──
-  return await _fetchSkyOfficial(from, to, ddate, paxObj);
+  return await _fetchSkyPriceCalendar(from, to, ddate);
 }
 
-async function _fetchSkyscanner44(from, to, ddate, paxObj) {
-  // skyscanner44.p.rapidapi.com — 免費 200次/月
-  // GET /api/v1/flights/searchFlights?origin=TPE&destination=NRT&date=2026-05-01&...
-  try {
-    const params = new URLSearchParams({
-      origin:      from.iata,
-      destination: to.iata,
-      date:        ddate,
-      adults:      paxObj.adult,
-      children:    paxObj.child  || 0,
-      infants:     paxObj.infant || 0,
-      currency:    'TWD',
-      locale:      'zh-TW',
-      market:      'TW',
-      countryCode: 'TW'
-    });
-    const r = await fetch(
-      `https://skyscanner44.p.rapidapi.com/api/v1/flights/searchFlights?${params}`,
-      { headers: {
-          'x-rapidapi-key':  _getSkyKey(),
-          'x-rapidapi-host': 'skyscanner44.p.rapidapi.com'
-        }
-      }
-    );
-    if (!r.ok) {
-      const errText = await r.text().catch(() => '');
-      console.error(`[skyscanner44] HTTP ${r.status}`, errText);
-      return null;
-    }
-    const json = await r.json();
-    console.log('[skyscanner44] 回應:', json);
-    return _parseSkyResult(json);
-  } catch(e) { console.error('[skyscanner44] 例外:', e); return null; }
-}
-
-async function _fetchSkyScrapper(from, to, ddate, paxObj) {
-  // sky-scrapper.p.rapidapi.com — 免費 500次/月
-  // Step1: searchAirport 取得 entityId → Step2: searchFlights v2
+async function _fetchSkyPriceCalendar(from, to, ddate) {
+  // sky-scrapper getPriceCalendar — 經測試確認可用，回傳真實 Skyscanner 票價
+  // GET /api/v1/flights/getPriceCalendar?originSkyId=TPE&destinationSkyId=NRT&fromDate=2026-05-01&currency=TWD
   try {
     const key  = _getSkyKey();
     const host = 'sky-scrapper.p.rapidapi.com';
-    const headers = { 'x-rapidapi-key': key, 'x-rapidapi-host': host };
-
-    // Step 1: 並行取得 entityId（IATA 查機場）
-    const [fromRes, toRes] = await Promise.all([
-      fetch(`https://${host}/api/v1/flights/searchAirport?query=${from.iata}&locale=en-US`, { headers }).then(r => r.json()).catch(() => null),
-      fetch(`https://${host}/api/v1/flights/searchAirport?query=${to.iata}&locale=en-US`,   { headers }).then(r => r.json()).catch(() => null)
-    ]);
-    const fromEntity = fromRes?.data?.[0];
-    const toEntity   = toRes?.data?.[0];
-    if (!fromEntity || !toEntity) {
-      console.warn('[sky-scrapper] searchAirport 未回傳結果', { fromRes, toRes });
-      return null;
-    }
-
-    // Step 2: searchFlights v2
+    // fromDate 設為搜尋日期所在月的 1 號，以取得整月日曆
+    const [year, mon] = ddate.split('-');
+    const fromDate = `${year}-${mon}-01`;
     const params = new URLSearchParams({
-      originSkyId:         fromEntity.skyId      || from.iata,
-      destinationSkyId:    toEntity.skyId        || to.iata,
-      originEntityId:      fromEntity.entityId,
-      destinationEntityId: toEntity.entityId,
-      date:                ddate,
-      adults:              paxObj.adult,
-      children:            paxObj.child  || 0,
-      infants:             paxObj.infant || 0,
-      currency:            'TWD',
-      locale:              'zh-TW',
-      market:              'TW',
-      cabinClass:          'economy',
-      sortBy:              'best',
-      countryCode:         'TW'
+      originSkyId:      from.iata,
+      destinationSkyId: to.iata,
+      fromDate,
+      currency: 'TWD'
     });
-    const r = await fetch(`https://${host}/api/v2/flights/searchFlights?${params}`, { headers });
+    const r = await fetch(
+      `https://${host}/api/v1/flights/getPriceCalendar?${params}`,
+      { headers: { 'x-rapidapi-key': key, 'x-rapidapi-host': host } }
+    );
     if (!r.ok) {
       const errText = await r.text().catch(() => '');
-      console.error(`[sky-scrapper] searchFlights HTTP ${r.status}`, errText);
+      console.error(`[sky-scrapper/calendar] HTTP ${r.status}`, errText);
       return null;
     }
     const json = await r.json();
-    console.log('[sky-scrapper] searchFlights 回應:', json);
-    return _parseSkyResult(json);
-  } catch(e) { console.error('[sky-scrapper] 例外:', e); return null; }
+    if (!json?.status) { console.warn('[sky-scrapper/calendar] status false', json); return null; }
+    const days = json?.data?.flights?.days || [];
+    console.log(`[sky-scrapper/calendar] 取得 ${days.length} 天票價`);
+    // 找目標日期或最近的未來日期
+    const exact = days.find(d => d.day === ddate);
+    if (exact?.price) return exact.price;
+    const nearby = days.filter(d => d.day >= ddate && d.price).sort((a,b) => a.day.localeCompare(b.day));
+    return nearby.length ? nearby[0].price : null;
+  } catch(e) { console.error('[sky-scrapper/calendar] 例外:', e); return null; }
 }
 
-async function _fetchSkyOfficial(from, to, ddate, paxObj) {
-  // partners.api.skyscanner.net — 需 Partner API key
-  try {
-    const [year, month, day] = ddate.split('-').map(Number);
-    const r = await fetch(
-      'https://partners.api.skyscanner.net/apiservices/v3/flights/indicative/search',
-      { method:'POST',
-        headers: { 'Content-Type':'application/json', 'x-api-key': _getSkyKey() },
-        body: JSON.stringify({
-          query: {
-            currency: 'TWD', locale: 'zh-TW', market: 'TW',
-            dateTimeGroupingType: 'DATE_TIME_GROUPING_TYPE_BY_DATE',
-            queryLegs: [{
-              originPlace:      { queryPlace: { iata: from.iata } },
-              destinationPlace: { queryPlace: { iata: to.iata } },
-              fixedDate: { year, month, day }
-            }]
-          }
-        })
-      }
-    );
-    if (!r.ok) return null;
-    const json = await r.json();
-    const quotes = json?.content?.results?.quotes || {};
-    const prices = Object.values(quotes).map(q => q?.minPrice?.amount).filter(p => p > 0);
-    return prices.length ? Math.min(...prices) : null;
-  } catch(e) { return null; }
-}
-
-// 解析 sky-scrapper / skyscanner44 共用回應格式
+// 解析 sky-scrapper / skyscanner44 共用回應格式（保留備用）
 function _parseSkyResult(json) {
   try {
     // 格式 A: itineraries[].price.raw
