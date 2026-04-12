@@ -1636,9 +1636,9 @@ function switchSource(src) {
   _updateFooter(src);
 
   if (_cache[src]) {
-    const { flights, isMock } = _cache[src];
+    const { flights, isMock, priceSource } = _cache[src];
     _allFlights = flights;
-    _setMockNote(src, isMock);
+    _setMockNote(src, isMock, priceSource);
     sortAndRender();
   } else if (_flightCtx) {
     // 尚未搜尋此平台 → 開始搜尋
@@ -1658,13 +1658,20 @@ function _updateFooter(src) {
   }
 }
 
-function _setMockNote(src, isMock) {
+function _setMockNote(src, isMock, priceSource) {
   const el = document.getElementById('mockNote');
   if (isMock) {
     el.style.display = 'block';
+    el.style.background = '#fff3cd';
+    el.style.color = '#856404';
     el.textContent = src === 'trip'
-      ? '⚠ 示範班表資料，票價參考 Trip.com 日曆 — 請點擊「前往訂購」確認最新票價'
-      : '⚠ 示範班表資料，票價參考 Skyscanner — 請點擊「前往訂購」確認最新票價';
+      ? '⚠ 估算班表，Trip.com API 暫無回應 — 請點擊「前往訂購」確認最新票價'
+      : '⚠ 估算班表，Skyscanner API 暫無回應 — 請點擊「前往訂購」確認最新票價';
+  } else if (src === 'trip' && priceSource === 'sky-fallback') {
+    el.style.display = 'block';
+    el.style.background = '#d1ecf1';
+    el.style.color = '#0c5460';
+    el.textContent = 'ℹ 票價來自 Skyscanner 市場行情（Trip.com API 需登入授權），班表為參考資料 — 請至 Trip.com 確認實際價格';
   } else {
     el.style.display = 'none';
   }
@@ -1721,64 +1728,69 @@ async function _runSearch(src) {
   if (!_flightCtx) return;
   const { from, to, ddate, cabin } = _flightCtx;
 
-  let price  = null;
-  let isMock = false;
+  let price       = null;
+  let isMock      = false;
+  let priceSource = src;   // 'trip' | 'sky' | 'sky-fallback'
 
   try {
-    price = src === 'trip'
-      ? await fetchTripPrice(from, to, ddate, pax)
-      : await fetchSkyPrice(from, to, ddate, pax);
-  } catch(e) {}
+    if (src === 'trip') {
+      const result = await fetchTripPrice(from, to, ddate, pax);
+      if (result && typeof result === 'object') {
+        price = result.price;
+        priceSource = result.source;  // 'trip' or 'sky-fallback'
+      } else {
+        price = result;
+      }
+    } else {
+      price = await fetchSkyPrice(from, to, ddate, pax);
+    }
+  } catch(e) { console.error(`[_runSearch/${src}]`, e); }
 
   const flights = generateFlights(from, to, ddate, pax, cabin, price, src);
   if (!price) isMock = true;
 
-  _cache[src] = { flights, isMock };
+  _cache[src] = { flights, isMock, priceSource };
   _setStatus(src, isMock ? 'mock' : 'live');
 
-  // 若目前顯示的就是這個平台，立刻渲染
   if (_currentSrc === src) {
     _allFlights = flights;
-    _setMockNote(src, isMock);
+    _setMockNote(src, isMock, priceSource);
     sortAndRender();
   }
 }
 
-// ── Trip.com SOA2 價格 API ──
-// Trip.com 回傳 Access-Control-Allow-Origin: * → 瀏覽器可直接呼叫，不需 CORS proxy
-// credentials:'include' 自動帶入使用者的 Trip.com cookies（解決 session NPE）
+// ── Trip.com 價格 API ──
+// 策略：先試 Trip.com SOA2（需 session cookies），失敗則 fallback 到
+//       sky-scrapper getPriceCalendar（已驗證可用，提供真實市場參考價）
 async function fetchTripPrice(from, to, ddate, paxObj) {
-  const ENDPOINT = 'https://m.ctrip.com/restapi/soa2/14427/getLowPriceInCalender';
-  const body = {
-    Head: {
-      Locale: 'zh_TW',
-      Source: 'Online',
-      Currency: 'TWD',
-      SiteID: 2,
-      ExtendFields: { DisableCalenderDefaultSetting: 'TRUE' }
-    },
-    dCity: from.iata, aCity: to.iata,
-    flightWayType: 'OW', dDate: ddate,
-    cabinClass: 'y',
-    adultCount: paxObj.adult, childCount: paxObj.child || 0, babyCount: paxObj.infant || 0
-  };
+  // Step 1: 嘗試 Trip.com 直接呼叫（若使用者有 m.ctrip.com cookies 則成功）
   try {
+    const ENDPOINT = 'https://m.ctrip.com/restapi/soa2/14427/getLowPriceInCalender';
+    const body = {
+      Head: { Locale:'zh_TW', Source:'Online', Currency:'TWD', SiteID:2,
+              ExtendFields:{ DisableCalenderDefaultSetting:'TRUE' } },
+      dCity: from.iata, aCity: to.iata,
+      flightWayType: 'OW', dDate: ddate, cabinClass: 'y',
+      adultCount: paxObj.adult, childCount: paxObj.child||0, babyCount: paxObj.infant||0
+    };
     const r = await fetch(ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',   // 帶入 Trip.com cookies（登入/匿名 session）
-      body: JSON.stringify(body)
+      method:'POST', headers:{'Content-Type':'application/json'},
+      credentials:'include', body:JSON.stringify(body)
     });
-    if (!r.ok) { console.warn(`[Trip.com] HTTP ${r.status}`); return null; }
-    const json = await r.json();
-    console.log('[Trip.com] 回應:', json);
-    const list = json?.lowPriceInCalenderDtoInfoList || [];
-    const exact = list.find(i => i.dDate === ddate);
-    if (exact?.currencyPrice) return exact.currencyPrice;
-    const nearby = list.filter(i => i.currencyPrice && i.dDate >= ddate)
-      .sort((a, b) => a.dDate.localeCompare(b.dDate));
-    if (nearby.length) return nearby[0].currencyPrice;
-  } catch(e) { console.warn('[Trip.com] 例外:', e); }
+    if (r.ok) {
+      const json = await r.json();
+      const list = json?.lowPriceInCalenderDtoInfoList || [];
+      const exact = list.find(i => i.dDate === ddate);
+      if (exact?.currencyPrice) { console.log('[Trip.com] 直連成功:', exact.currencyPrice); return { price: exact.currencyPrice, source: 'trip' }; }
+      const nearby = list.filter(i => i.currencyPrice && i.dDate >= ddate).sort((a,b) => a.dDate.localeCompare(b.dDate));
+      if (nearby.length) { console.log('[Trip.com] 直連近似:', nearby[0].currencyPrice); return { price: nearby[0].currencyPrice, source: 'trip' }; }
+    }
+  } catch(e) { console.warn('[Trip.com] 直連例外:', e); }
+
+  // Step 2: Fallback → sky-scrapper getPriceCalendar（真實市場價，兩平台來源相近）
+  console.log('[Trip.com] 改用 sky-scrapper getPriceCalendar 作為參考價');
+  const fallbackPrice = await _fetchSkyPriceCalendar(from, to, ddate);
+  if (fallbackPrice) return { price: fallbackPrice, source: 'sky-fallback' };
   return null;
 }
 
