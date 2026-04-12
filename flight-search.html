@@ -177,6 +177,18 @@
     .fl-footer a{color:var(--blue);font-weight:600;text-decoration:none}
     .fl-count{font-size:12px;color:var(--text-muted);padding:4px 12px 8px}
 
+    /* Source tabs */
+    .src-tabs{display:flex;border-bottom:2px solid var(--border);background:var(--white)}
+    .src-tab{flex:1;padding:11px 8px;border:none;background:transparent;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text-muted);display:flex;align-items:center;justify-content:center;gap:7px;border-bottom:2.5px solid transparent;margin-bottom:-2px;transition:all .18s}
+    .src-tab:hover{color:var(--blue);background:#f8fafc}
+    .src-tab.active[data-src="trip"]{color:#0066cc;border-bottom-color:#0066cc}
+    .src-tab.active[data-src="sky"]{color:#00a5e0;border-bottom-color:#00a5e0}
+    .src-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    .src-status{font-size:10px;font-weight:400;padding:1px 5px;border-radius:3px;background:#f1f5f9;color:#64748b}
+    .src-status.live{background:#dcfce7;color:#15803d}
+    .src-status.mock{background:#fef9c3;color:#854d0e}
+    .src-status.loading{background:#e0f2fe;color:#0369a1}
+
     /* Flight Card */
     .flight-card{border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:8px;display:grid;grid-template-columns:76px 1fr 110px;align-items:center;gap:14px;transition:border-color .18s;background:var(--white)}
     .flight-card:hover{border-color:var(--blue);box-shadow:var(--shadow-sm)}
@@ -383,11 +395,11 @@
         </select>
       </div>
     </div>
-    <button class="search-btn" onclick="searchFlights()">
+    <button class="search-btn" onclick="searchBoth()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
-      搜尋航班
+      搜尋航班（比較兩平台）
     </button>
     <div class="platform-btns">
       <button class="platform-btn trip" onclick="searchOn('trip')">
@@ -405,6 +417,20 @@
 <!-- Flight Results Panel -->
 <div class="flights-wrap">
   <div class="flights-panel" id="flightsPanel">
+    <!-- 來源 Tabs -->
+    <div class="src-tabs">
+      <button class="src-tab active" data-src="trip" onclick="switchSource('trip')">
+        <span class="src-dot" style="background:#0066cc"></span>
+        Trip.com
+        <span class="src-status" id="tripStatus">–</span>
+      </button>
+      <button class="src-tab" data-src="sky" onclick="switchSource('sky')">
+        <span class="src-dot" style="background:#00a5e0"></span>
+        Skyscanner
+        <span class="src-status" id="skyStatus">–</span>
+      </button>
+    </div>
+    <!-- Header -->
     <div class="flights-head">
       <div class="fh-info">
         <div class="fh-title" id="flightsTitle">航班搜尋結果</div>
@@ -420,12 +446,11 @@
         <button class="fl-close" onclick="document.getElementById('flightsPanel').classList.remove('show')">✕</button>
       </div>
     </div>
-    <div class="mock-note" id="mockNote">⚠ 示範班表資料，票價來自 Trip.com — 實際班次請點擊「前往訂購」確認</div>
+    <div class="mock-note" id="mockNote"></div>
     <div class="fl-count" id="flCount"></div>
     <div class="flights-list" id="flightsList"></div>
-    <div class="fl-footer">
-      資料整合自 Trip.com ·
-      <a id="tripFullLink" href="#" target="_blank" rel="noopener">查看 Trip.com 完整搜尋結果 →</a>
+    <div class="fl-footer" id="flFooter">
+      <a id="fullSearchLink" href="#" target="_blank" rel="noopener">查看完整搜尋結果 →</a>
     </div>
   </div>
 </div>
@@ -1207,7 +1232,8 @@ function searchOn(platform) {
 }
 
 // 向後相容
-function doSearch() { searchOn('both'); }
+function doSearch()      { searchBoth(); }
+function searchFlights() { searchBoth(); }
 
 // ── Airline Grid ──
 function renderAirlineGrid() {
@@ -1507,87 +1533,153 @@ const DEP_TIMES = ['06:00','06:35','07:10','07:50','08:20','09:00',
   '14:05','15:00','15:50','16:40','17:30','18:20',
   '19:10','20:00','20:50','21:40','22:30','23:15'];
 
-let _allFlights    = [];
-let _directOnly    = false;
-let _flightCtx     = null;   // { from, to, ddate }
+// ── Source state ──
+let _allFlights  = [];
+let _directOnly  = false;
+let _flightCtx   = null;   // { from, to, ddate, cabin }
+let _currentSrc  = 'trip'; // 'trip' | 'sky'
+// 快取兩平台結果
+const _cache = { trip: null, sky: null };
 
-// ── Main search entry ──
-async function searchFlights() {
+// ── Tab 切換 ──
+function switchSource(src) {
+  _currentSrc = src;
+  document.querySelectorAll('.src-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.src === src));
+
+  // 更新 footer
+  _updateFooter(src);
+
+  if (_cache[src]) {
+    const { flights, isMock } = _cache[src];
+    _allFlights = flights;
+    _setMockNote(src, isMock);
+    sortAndRender();
+  } else if (_flightCtx) {
+    // 尚未搜尋此平台 → 開始搜尋
+    _runSearch(src);
+  }
+}
+
+function _updateFooter(src) {
+  const ctx = _flightCtx;
+  if (!ctx) return;
+  if (src === 'trip') {
+    document.getElementById('fullSearchLink').textContent = '查看 Trip.com 完整搜尋結果 →';
+    document.getElementById('fullSearchLink').href = buildTripUrl(ctx.ddate);
+  } else {
+    document.getElementById('fullSearchLink').textContent = '查看 Skyscanner 完整搜尋結果 →';
+    document.getElementById('fullSearchLink').href = buildSkyscannerUrl(ctx.ddate);
+  }
+}
+
+function _setMockNote(src, isMock) {
+  const el = document.getElementById('mockNote');
+  if (isMock) {
+    el.style.display = 'block';
+    el.textContent = src === 'trip'
+      ? '⚠ 示範班表資料，票價參考 Trip.com 日曆 — 請點擊「前往訂購」確認最新票價'
+      : '⚠ 示範班表資料，票價參考 Skyscanner — 請點擊「前往訂購」確認最新票價';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+function _setStatus(src, state) {
+  // state: 'loading' | 'live' | 'mock' | 'idle'
+  const el = document.getElementById(src === 'trip' ? 'tripStatus' : 'skyStatus');
+  el.className = 'src-status ' + (state === 'idle' ? '' : state);
+  el.textContent = { loading:'搜尋中', live:'即時', mock:'估算', idle:'–' }[state] || '–';
+}
+
+// ── 搜尋兩平台（主按鈕） ──
+async function searchBoth() {
   if (!validateSearch()) return;
-  const ddate  = document.getElementById('ddate').value;
-  const cabin  = document.getElementById('cabin').value;
-  const from   = fromAirport;
-  const to     = toAirport;
-  const tripUrl = buildTripUrl(ddate);
-
-  _flightCtx = { from, to, ddate };
-  _directOnly = false;
-  document.getElementById('filterDirect').classList.remove('active');
-
-  // 更新標頭
+  const ddate = document.getElementById('ddate').value;
+  const cabin = document.getElementById('cabin').value;
+  const from  = fromAirport, to = toAirport;
   const cabinLabel = {y:'經濟艙',s:'豪華經濟艙',c:'商務艙',f:'頭等艙'}[cabin];
+
+  _flightCtx  = { from, to, ddate, cabin };
+  _cache.trip = null;
+  _cache.sky  = null;
+  _directOnly = false;
+  _currentSrc = 'trip';
+
+  document.getElementById('filterDirect').classList.remove('active');
   document.getElementById('flightsTitle').textContent = `${from.name} → ${to.name}`;
   document.getElementById('flightsSub').textContent =
     `${fmtDateDisplay(ddate)} · ${pax.adult}成人${pax.child?` · ${pax.child}兒童`:''}${pax.infant?` · ${pax.infant}嬰兒`:''} · ${cabinLabel}`;
-  document.getElementById('tripFullLink').href = tripUrl;
-  document.getElementById('flightsList').innerHTML =
-    `<div class="fl-loading"><div class="spinner"></div>正在從 Trip.com 查詢航班與票價...</div>`;
+
+  // 重置 tabs
+  document.querySelectorAll('.src-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.src === 'trip'));
+  _setStatus('trip', 'loading');
+  _setStatus('sky',  'loading');
+  _updateFooter('trip');
+
+  // 顯示 panel
   document.getElementById('mockNote').style.display = 'none';
   document.getElementById('flCount').textContent = '';
-
+  document.getElementById('flightsList').innerHTML =
+    `<div class="fl-loading"><div class="spinner"></div>正在從 Trip.com 查詢航班與票價...</div>`;
   const panel = document.getElementById('flightsPanel');
   panel.classList.add('show');
   panel.scrollIntoView({ behavior:'smooth', block:'start' });
 
-  // 先從 Trip.com 取得價格資料
-  let tripPrice = null;
+  // 兩平台並行搜尋
+  _runSearch('trip');
+  _runSearch('sky');
+}
+
+async function _runSearch(src) {
+  if (!_flightCtx) return;
+  const { from, to, ddate, cabin } = _flightCtx;
+
+  let price  = null;
   let isMock = false;
 
   try {
-    tripPrice = await fetchTripPrice(from, to, ddate, pax);
+    price = src === 'trip'
+      ? await fetchTripPrice(from, to, ddate, pax)
+      : await fetchSkyPrice(from, to, ddate, pax);
   } catch(e) {}
 
-  // 生成航班列表
-  _allFlights = generateFlights(from, to, ddate, pax, cabin, tripPrice);
-  if (!tripPrice) isMock = true;
+  const flights = generateFlights(from, to, ddate, pax, cabin, price, src);
+  if (!price) isMock = true;
 
-  document.getElementById('mockNote').style.display = isMock ? 'block' : 'none';
-  sortAndRender();
+  _cache[src] = { flights, isMock };
+  _setStatus(src, isMock ? 'mock' : 'live');
+
+  // 若目前顯示的就是這個平台，立刻渲染
+  if (_currentSrc === src) {
+    _allFlights = flights;
+    _setMockNote(src, isMock);
+    sortAndRender();
+  }
 }
 
-// ── 呼叫 Trip.com SOA2 價格 API ──
+// ── Trip.com SOA2 價格 API ──
 async function fetchTripPrice(from, to, ddate, paxObj) {
-  const PROXIES = [
-    'https://corsproxy.io/?url=',
-    'https://api.allorigins.win/raw?url='
-  ];
-  const ENDPOINT = 'https://m.ctrip.com/restapi/soa2/14427/getLowPriceInCalender';
+  const PROXIES   = ['https://corsproxy.io/?url=', 'https://api.allorigins.win/raw?url='];
+  const ENDPOINT  = 'https://m.ctrip.com/restapi/soa2/14427/getLowPriceInCalender';
   const body = {
     Head: { ExtendFields:{ DisableCalenderDefaultSetting:'TRUE' } },
-    dCity: from.iata,
-    aCity: to.iata,
-    flightWayType: 'OW',
-    dDate: ddate,
+    dCity: from.iata, aCity: to.iata,
+    flightWayType: 'OW', dDate: ddate,
     cabinClass: 'y',
-    adultCount: paxObj.adult,
-    childCount: paxObj.child,
-    babyCount:  paxObj.infant
+    adultCount: paxObj.adult, childCount: paxObj.child, babyCount: paxObj.infant
   };
-
   for (const proxy of PROXIES) {
     try {
       const r = await fetch(proxy + encodeURIComponent(ENDPOINT), {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify(body)
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
       });
       if (!r.ok) continue;
       const json = await r.json();
       const list = json?.lowPriceInCalenderDtoInfoList || [];
-      // 找當天或最近價格
       const exact = list.find(i => i.dDate === ddate);
       if (exact?.currencyPrice) return exact.currencyPrice;
-      // 找最近日期
       const nearby = list.filter(i => i.currencyPrice && i.dDate >= ddate)
         .sort((a,b) => a.dDate.localeCompare(b.dDate));
       if (nearby.length) return nearby[0].currencyPrice;
@@ -1596,8 +1688,48 @@ async function fetchTripPrice(from, to, ddate, paxObj) {
   return null;
 }
 
+// ── Skyscanner Indicative Prices API ──
+// 官方端點: POST https://partners.api.skyscanner.net/apiservices/v3/flights/indicative/search
+// Header: x-api-key: <your-key>
+// 填入 SKYSCANNER_RAPIDAPI_KEY 啟用即時查詢
+async function fetchSkyPrice(from, to, ddate, paxObj) {
+  if (!SKYSCANNER_RAPIDAPI_KEY) return null;
+  const PROXIES  = ['https://corsproxy.io/?url='];
+  const ENDPOINT = 'https://partners.api.skyscanner.net/apiservices/v3/flights/indicative/search';
+  const [year, month, day] = ddate.split('-').map(Number);
+  const body = {
+    query: {
+      currency: 'TWD', locale: 'zh-TW', market: 'TW',
+      dateTimeGroupingType: 'DATE_TIME_GROUPING_TYPE_BY_DATE',
+      queryLegs: [{
+        originPlace:      { queryPlace: { iata: from.iata } },
+        destinationPlace: { queryPlace: { iata: to.iata } },
+        fixedDate: { year, month, day }
+      }]
+    }
+  };
+  for (const proxy of PROXIES) {
+    try {
+      const r = await fetch(proxy + encodeURIComponent(ENDPOINT), {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'x-api-key': SKYSCANNER_RAPIDAPI_KEY },
+        body: JSON.stringify(body)
+      });
+      if (!r.ok) continue;
+      const json = await r.json();
+      // 解析 indicative price response
+      const quotes = json?.content?.results?.quotes || {};
+      const prices = Object.values(quotes)
+        .map(q => q?.minPrice?.amount)
+        .filter(p => p && p > 0);
+      if (prices.length) return Math.min(...prices);
+    } catch(e) { continue; }
+  }
+  return null;
+}
+
 // ── 生成航班資料 ──
-function generateFlights(from, to, ddate, paxObj, cabin, tripBasePrice) {
+function generateFlights(from, to, ddate, paxObj, cabin, tripBasePrice, src) {
   const toAir = AIRPORTS.find(a => a.iata === to.iata) || to;
   const region = toAir.region || 'sea';
   const baseDur = ROUTE_DURATION[region] || 300;
@@ -1637,16 +1769,19 @@ function generateFlights(from, to, ddate, paxObj, cabin, tripBasePrice) {
       const stopPenalty = stops ? 0.85 : 1;
       const price = Math.round((basePrice * cabinMult * lccDiscount * stopPenalty + priceNoise) / 100) * 100;
 
+      // Skyscanner 價格略有差異（模擬不同供應商）
+      const skyAdj = src === 'sky' ? ((Math.random()-0.5)*basePrice*0.08 + 1) : 1;
       flights.push({
-        id: `${code}-${idx}-${fi}`,
+        id: `${src}-${code}-${idx}-${fi}`,
         airline: { code, ...meta },
         flightNo: nos[(fi) % nos.length],
         from: { iata: from.iata, time: depT },
         to:   { iata: to.iata,   time: arrT },
         duration: dur,
         stops,
-        price: Math.max(price, 800),
-        currency: 'TWD'
+        price: Math.max(Math.round(price * skyAdj / 100)*100, 800),
+        currency: 'TWD',
+        src: src || 'trip'
       });
     }
   });
@@ -1683,17 +1818,30 @@ function renderFlightList(flights) {
       `<div class="fl-empty">😕 查無符合條件的航班<br><small>試試取消「僅直飛」篩選</small></div>`;
     return;
   }
-  const ctx      = _flightCtx;
-  const tripBase = ctx ? buildTripUrl(ctx.ddate) : '#';
+  const ctx = _flightCtx;
 
   document.getElementById('flightsList').innerHTML = flights.map(f => {
     const durH  = Math.floor(f.duration/60);
     const durM  = f.duration % 60;
     const total = f.price * pax.adult;
-    // Trip.com 深連結帶入航班號 (airline + flight no)
-    const bookUrl = ctx
-      ? buildTripUrl(ctx.ddate) + `&airlineCode=${f.airline.code}&flightNo=${f.flightNo}`
-      : tripBase;
+    const src   = f.src || _currentSrc;
+
+    // 依來源建立訂購連結
+    let bookUrl = '#';
+    if (ctx) {
+      if (src === 'sky') {
+        // Skyscanner: 帶入航空代碼篩選
+        bookUrl = buildSkyscannerUrl(ctx.ddate)
+          + `&carriers=${f.airline.code.toLowerCase()}`;
+      } else {
+        // Trip.com: 帶入航班號
+        bookUrl = buildTripUrl(ctx.ddate)
+          + `&airlineCode=${f.airline.code}&flightNo=${encodeURIComponent(f.flightNo)}`;
+      }
+    }
+
+    const srcColor  = src === 'sky' ? '#00a5e0' : '#0066cc';
+    const srcLabel  = src === 'sky' ? 'Skyscanner' : 'Trip.com';
 
     return `
     <div class="flight-card">
@@ -1724,8 +1872,9 @@ function renderFlightList(flights) {
           ${total>=10000?(total/1000).toFixed(1)+'K':total.toLocaleString()}
         </div>
         <div class="fc-price-note">TWD · ${pax.adult}人</div>
-        <button class="fc-book" onclick="window.open('${bookUrl}','_blank')">
-          前往訂購 →
+        <button class="fc-book" style="background:${srcColor}"
+                onclick="window.open('${bookUrl}','_blank')">
+          ${srcLabel} 訂購 →
         </button>
       </div>
     </div>`;
