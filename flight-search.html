@@ -1485,9 +1485,11 @@ function showToast(msg) {
 (function initApiKey() {
   const saved = localStorage.getItem('sky_rapidapi_key');
   if (saved) {
-    // 注意：SKYSCANNER_RAPIDAPI_KEY 是 const，用 window 物件覆蓋
     window._skyKey = saved;
     _updateKeyUI(saved);
+  } else if (SKYSCANNER_RAPIDAPI_KEY) {
+    // hardcoded const 也要更新 UI badge
+    _updateKeyUI(SKYSCANNER_RAPIDAPI_KEY);
   }
 })();
 
@@ -1758,15 +1760,16 @@ async function fetchTripPrice(from, to, ddate, paxObj) {
       const r = await fetch(proxy + encodeURIComponent(ENDPOINT), {
         method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
       });
-      if (!r.ok) continue;
+      if (!r.ok) { console.warn(`[Trip.com] proxy ${proxy} HTTP ${r.status}`); continue; }
       const json = await r.json();
+      console.log('[Trip.com] 回應:', json);
       const list = json?.lowPriceInCalenderDtoInfoList || [];
       const exact = list.find(i => i.dDate === ddate);
       if (exact?.currencyPrice) return exact.currencyPrice;
       const nearby = list.filter(i => i.currencyPrice && i.dDate >= ddate)
         .sort((a,b) => a.dDate.localeCompare(b.dDate));
       if (nearby.length) return nearby[0].currencyPrice;
-    } catch(e) { continue; }
+    } catch(e) { console.warn('[Trip.com] 例外:', e); continue; }
   }
   return null;
 }
@@ -1821,43 +1824,64 @@ async function _fetchSkyscanner44(from, to, ddate, paxObj) {
         }
       }
     );
-    if (!r.ok) return null;
+    if (!r.ok) {
+      const errText = await r.text().catch(() => '');
+      console.error(`[skyscanner44] HTTP ${r.status}`, errText);
+      return null;
+    }
     const json = await r.json();
+    console.log('[skyscanner44] 回應:', json);
     return _parseSkyResult(json);
-  } catch(e) { return null; }
+  } catch(e) { console.error('[skyscanner44] 例外:', e); return null; }
 }
 
 async function _fetchSkyScrapper(from, to, ddate, paxObj) {
   // sky-scrapper.p.rapidapi.com — 免費 500次/月
-  // GET /api/v1/flights/searchFlights?originSkyId=TPE&destinationSkyId=NRT&...
+  // Step1: searchAirport 取得 entityId → Step2: searchFlights v2
   try {
+    const key  = _getSkyKey();
+    const host = 'sky-scrapper.p.rapidapi.com';
+    const headers = { 'x-rapidapi-key': key, 'x-rapidapi-host': host };
+
+    // Step 1: 並行取得 entityId（IATA 查機場）
+    const [fromRes, toRes] = await Promise.all([
+      fetch(`https://${host}/api/v1/flights/searchAirport?query=${from.iata}&locale=en-US`, { headers }).then(r => r.json()).catch(() => null),
+      fetch(`https://${host}/api/v1/flights/searchAirport?query=${to.iata}&locale=en-US`,   { headers }).then(r => r.json()).catch(() => null)
+    ]);
+    const fromEntity = fromRes?.data?.[0];
+    const toEntity   = toRes?.data?.[0];
+    if (!fromEntity || !toEntity) {
+      console.warn('[sky-scrapper] searchAirport 未回傳結果', { fromRes, toRes });
+      return null;
+    }
+
+    // Step 2: searchFlights v2
     const params = new URLSearchParams({
-      originSkyId:      from.iata,
-      destinationSkyId: to.iata,
-      originEntityId:   '',         // 可為空，API 會自動解析
-      destinationEntityId: '',
-      date:             ddate,
-      adults:           paxObj.adult,
-      children:         paxObj.child  || 0,
-      infants:          paxObj.infant || 0,
-      currency:         'TWD',
-      locale:           'zh-TW',
-      market:           'TW',
-      cabinClass:       'economy',
-      countryCode:      'TW'
+      originSkyId:         fromEntity.skyId      || from.iata,
+      destinationSkyId:    toEntity.skyId        || to.iata,
+      originEntityId:      fromEntity.entityId,
+      destinationEntityId: toEntity.entityId,
+      date:                ddate,
+      adults:              paxObj.adult,
+      children:            paxObj.child  || 0,
+      infants:             paxObj.infant || 0,
+      currency:            'TWD',
+      locale:              'zh-TW',
+      market:              'TW',
+      cabinClass:          'economy',
+      sortBy:              'best',
+      countryCode:         'TW'
     });
-    const r = await fetch(
-      `https://sky-scrapper.p.rapidapi.com/api/v1/flights/searchFlights?${params}`,
-      { headers: {
-          'x-rapidapi-key':  _getSkyKey(),
-          'x-rapidapi-host': 'sky-scrapper.p.rapidapi.com'
-        }
-      }
-    );
-    if (!r.ok) return null;
+    const r = await fetch(`https://${host}/api/v2/flights/searchFlights?${params}`, { headers });
+    if (!r.ok) {
+      const errText = await r.text().catch(() => '');
+      console.error(`[sky-scrapper] searchFlights HTTP ${r.status}`, errText);
+      return null;
+    }
     const json = await r.json();
+    console.log('[sky-scrapper] searchFlights 回應:', json);
     return _parseSkyResult(json);
-  } catch(e) { return null; }
+  } catch(e) { console.error('[sky-scrapper] 例外:', e); return null; }
 }
 
 async function _fetchSkyOfficial(from, to, ddate, paxObj) {
