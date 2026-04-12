@@ -854,10 +854,11 @@ const TW_AIRLINES = [
     code: 'CI',
     color: '#003087',
     emoji: '✈',
-    deepLink: false,
+    deepLink: true,
+    formPost: true,
     bookingUrl: 'https://www.china-airlines.com/tw/zh/booking/book-flights/flight-search',
-    note: '前往官網選擇艙等與日期',
-    buildUrl: () => 'https://www.china-airlines.com/tw/zh/booking/book-flights/flight-search'
+    note: '自動帶入搜尋條件 (POST)',
+    buildUrl: () => '#'
   },
   {
     id: 'br',
@@ -911,6 +912,61 @@ const TW_AIRLINES = [
     }
   }
 ];
+
+// ════════════════════════════════════════════════
+//  China Airlines POST 搜尋
+//  端口: POST https://www.china-airlines.com/tw/zh/FlightSearchResults
+//  B_DATE_1/2 格式: YYYYMMDDhhmm (e.g. 202605010800)
+// ════════════════════════════════════════════════
+function fmtCIDate(dateStr) {
+  // "2026-05-01" → "202605010800"
+  return dateStr.replace(/-/g, '') + '0800';
+}
+
+function submitCISearch(fromA, toA, ddate, rdate, paxObj, tripT, cabin) {
+  const cabinMap = { y:'Y', s:'W', c:'C', f:'C' };
+  const isRound = tripT === 'd';
+  const fields = {
+    B_DATE_1:      fmtCIDate(ddate),
+    B_DATE_2:      fmtCIDate(isRound && rdate ? rdate : ddate),
+    B_LOCATION_1:  fromA.iata,
+    E_LOCATION_1:  toA.iata,
+    B_LOCATION_2:  toA.iata,
+    E_LOCATION_2:  fromA.iata,
+    EBA:           'TW',
+    STUDENTS:      '0',
+    ADULTS:        String(paxObj.adult || 1),
+    YOUNGADTS:     '0',
+    CHILDS:        String(paxObj.child || 0),
+    INFANTS:       String(paxObj.infant || 0),
+    LANG:          'TW',
+    Token:         '',
+    CRPID:         '',
+    returnURL:     'https://www.china-airlines.com/tw/zh/',
+    TRIP_TYPE:     isRound ? 'R' : 'O',
+    flightType:    isRound ? 'round-trip' : 'one-way',
+    selectedMonth: '',
+    departuredate: ddate.replace(/-/g, '/'),
+    returndate:    isRound && rdate ? rdate.replace(/-/g, '/') : '',
+    CABIN:         cabinMap[cabin] || 'Y',
+    Channel:       'CMS',
+    SessionID:     ''
+  };
+  const f = document.createElement('form');
+  f.method = 'POST';
+  f.action = 'https://www.china-airlines.com/tw/zh/FlightSearchResults';
+  f.target = '_blank';
+  Object.entries(fields).forEach(([k, v]) => {
+    const inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = k;
+    inp.value = v;
+    f.appendChild(inp);
+  });
+  document.body.appendChild(f);
+  f.submit();
+  setTimeout(() => { if (f.parentNode) document.body.removeChild(f); }, 200);
+}
 
 // ════════════════════════════════════════════════
 //  Skyscanner API Config
@@ -1029,21 +1085,37 @@ function searchOn(platform) {
   `;
 
   // 台灣航空
+  const _cabin = document.getElementById('cabin').value;
   TW_AIRLINES.forEach(airline => {
-    const url = airline.buildUrl(from, to, ddate, rdate, pax, tripType);
     const badgeStyle = `background:${airline.color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;margin-right:6px;display:inline-block`;
-    html += `
-      <a class="result-link-card" href="${url}" target="_blank" rel="noopener"
-         style="border-color:${airline.deepLink ? airline.color+'66' : 'var(--border)'}">
-        <div>
-          <div class="result-link-platform">
-            <span style="${badgeStyle}">${airline.code}</span>${airline.name}
+    if (airline.formPost) {
+      html += `
+        <div class="result-link-card" style="cursor:pointer;border-color:${airline.color}66"
+             onclick="submitCISearch(fromAirport,toAirport,'${ddate}','${rdate}',pax,tripType,'${_cabin}')">
+          <div>
+            <div class="result-link-platform">
+              <span style="${badgeStyle}">${airline.code}</span>${airline.name}
+            </div>
+            <div class="result-link-desc">${airline.en} · ${airline.note}</div>
           </div>
-          <div class="result-link-desc">${airline.en} · ${airline.note}</div>
+          <span class="result-link-arrow" style="color:${airline.color}">→</span>
         </div>
-        <span class="result-link-arrow" style="color:${airline.deepLink ? airline.color : 'var(--text-muted)'}">→</span>
-      </a>
-    `;
+      `;
+    } else {
+      const url = airline.buildUrl(from, to, ddate, rdate, pax, tripType);
+      html += `
+        <a class="result-link-card" href="${url}" target="_blank" rel="noopener"
+           style="border-color:${airline.deepLink ? airline.color+'66' : 'var(--border)'}">
+          <div>
+            <div class="result-link-platform">
+              <span style="${badgeStyle}">${airline.code}</span>${airline.name}
+            </div>
+            <div class="result-link-desc">${airline.en} · ${airline.note}</div>
+          </div>
+          <span class="result-link-arrow" style="color:${airline.deepLink ? airline.color : 'var(--text-muted)'}">→</span>
+        </a>
+      `;
+    }
   });
 
   document.getElementById('resultsLinks').innerHTML = html;
@@ -1079,11 +1151,16 @@ function airlineCardClick(e, id) {
   const ddate = document.getElementById('ddate').value;
   if (!ddate) return;
   const rdate = document.getElementById('rdate').value;
+  const cabin = document.getElementById('cabin').value;
   const airline = TW_AIRLINES.find(a => a.id === id);
   if (!airline || !airline.deepLink) return; // 非 deep link 就正常跳官網
   e.preventDefault();
-  const url = airline.buildUrl(fromAirport, toAirport, ddate, rdate, pax, tripType);
-  window.open(url, '_blank');
+  if (airline.formPost) {
+    submitCISearch(fromAirport, toAirport, ddate, rdate, pax, tripType, cabin);
+  } else {
+    const url = airline.buildUrl(fromAirport, toAirport, ddate, rdate, pax, tripType);
+    window.open(url, '_blank');
+  }
 }
 
 // ════════════════════════════════════════════════
