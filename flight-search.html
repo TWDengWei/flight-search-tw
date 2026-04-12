@@ -1894,8 +1894,8 @@ function generateFlights(from, to, ddate, paxObj, cabin, tripBasePrice, src) {
       const stopPenalty = stops ? 0.85 : 1;
       const price = Math.round((basePrice * cabinMult * lccDiscount * stopPenalty + priceNoise) / 100) * 100;
 
-      // Skyscanner 價格略有差異（模擬不同供應商）
-      const skyAdj = src === 'sky' ? ((Math.random()-0.5)*basePrice*0.08 + 1) : 1;
+      // Skyscanner 價格略有差異（±4% 模擬不同供應商）
+      const skyAdj = src === 'sky' ? (1 + (Math.random()-0.5)*0.08) : 1;
       flights.push({
         id: `${src}-${code}-${idx}-${fi}`,
         airline: { code, ...meta },
