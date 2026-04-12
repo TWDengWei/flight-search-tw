@@ -1117,6 +1117,12 @@ function submitCISearch(fromA, toA, ddate, rdate, paxObj, tripT, cabin) {
 // ════════════════════════════════════════════════
 const SKYSCANNER_RAPIDAPI_KEY = 'K0DIojlrT0msh940ger0Im41erhUp1fFCItjsnuAmYu1JTWoHm';
 
+// ── 後端 API 設定 ──────────────────────────────────────────────────
+// 部署後端後將此 URL 改為實際後端位址，例如：
+//   https://flightgo-backend.onrender.com
+// 若為空字串，前端直接呼叫各 API（使用 RapidAPI key）
+const BACKEND_URL = '';
+
 // ── Skyscanner URL builder ──
 function buildSkyscannerUrl(ddate) {
   const from = fromAirport, to = toAirport;
@@ -1760,35 +1766,54 @@ async function _runSearch(src) {
 }
 
 // ── Trip.com 價格 API ──
-// 策略：先試 Trip.com SOA2（需 session cookies），失敗則 fallback 到
-//       sky-scrapper getPriceCalendar（已驗證可用，提供真實市場參考價）
+// 策略 1（有後端）：呼叫 BACKEND_URL/api/price?src=trip
+//   後端用 Puppeteer stealth 取得真實 Trip.com session，繞過 PerimeterX
+// 策略 2（無後端）：先試 Trip.com 直連，失敗則 fallback sky-scrapper
 async function fetchTripPrice(from, to, ddate, paxObj) {
-  // Step 1: 嘗試 Trip.com 直接呼叫（若使用者有 m.ctrip.com cookies 則成功）
+  // ── 有後端 ──
+  if (BACKEND_URL) {
+    try {
+      const params = new URLSearchParams({
+        from: from.iata, to: to.iata, date: ddate,
+        adults: paxObj.adult, src: 'auto'
+      });
+      const r = await fetch(`${BACKEND_URL}/api/price?${params}`);
+      if (r.ok) {
+        const json = await r.json();
+        if (json.price) {
+          console.log(`[Trip.com/backend] ${json.source}: ${json.price}`);
+          return { price: json.price, source: json.source === 'trip' ? 'trip' : 'sky-fallback' };
+        }
+      }
+    } catch(e) { console.warn('[Trip.com/backend] 例外:', e); }
+    return null;
+  }
+
+  // ── 無後端：直連 Trip.com（需使用者有 session cookies）──
   try {
-    const ENDPOINT = 'https://m.ctrip.com/restapi/soa2/14427/getLowPriceInCalender';
-    const body = {
-      Head: { Locale:'zh_TW', Source:'Online', Currency:'TWD', SiteID:2,
-              ExtendFields:{ DisableCalenderDefaultSetting:'TRUE' } },
-      dCity: from.iata, aCity: to.iata,
-      flightWayType: 'OW', dDate: ddate, cabinClass: 'y',
-      adultCount: paxObj.adult, childCount: paxObj.child||0, babyCount: paxObj.infant||0
-    };
-    const r = await fetch(ENDPOINT, {
+    const r = await fetch('https://m.ctrip.com/restapi/soa2/14427/getLowPriceInCalender', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      credentials:'include', body:JSON.stringify(body)
+      credentials:'include',
+      body: JSON.stringify({
+        Head: { Locale:'zh_TW', Source:'Online', Currency:'TWD', SiteID:2,
+                ExtendFields:{ DisableCalenderDefaultSetting:'TRUE' } },
+        dCity: from.iata, aCity: to.iata,
+        flightWayType:'OW', dDate:ddate, cabinClass:'y',
+        adultCount:paxObj.adult, childCount:paxObj.child||0, babyCount:paxObj.infant||0
+      })
     });
     if (r.ok) {
       const json = await r.json();
       const list = json?.lowPriceInCalenderDtoInfoList || [];
       const exact = list.find(i => i.dDate === ddate);
-      if (exact?.currencyPrice) { console.log('[Trip.com] 直連成功:', exact.currencyPrice); return { price: exact.currencyPrice, source: 'trip' }; }
-      const nearby = list.filter(i => i.currencyPrice && i.dDate >= ddate).sort((a,b) => a.dDate.localeCompare(b.dDate));
-      if (nearby.length) { console.log('[Trip.com] 直連近似:', nearby[0].currencyPrice); return { price: nearby[0].currencyPrice, source: 'trip' }; }
+      if (exact?.currencyPrice) return { price: exact.currencyPrice, source: 'trip' };
+      const nearby = list.filter(i => i.currencyPrice && i.dDate >= ddate)
+        .sort((a,b) => a.dDate.localeCompare(b.dDate));
+      if (nearby.length) return { price: nearby[0].currencyPrice, source: 'trip' };
     }
   } catch(e) { console.warn('[Trip.com] 直連例外:', e); }
 
-  // Step 2: Fallback → sky-scrapper getPriceCalendar（真實市場價，兩平台來源相近）
-  console.log('[Trip.com] 改用 sky-scrapper getPriceCalendar 作為參考價');
+  // ── Fallback：sky-scrapper getPriceCalendar ──
   const fallbackPrice = await _fetchSkyPriceCalendar(from, to, ddate);
   if (fallbackPrice) return { price: fallbackPrice, source: 'sky-fallback' };
   return null;
@@ -1800,6 +1825,18 @@ async function fetchTripPrice(from, to, ddate, paxObj) {
 //  GET sky-scrapper.p.rapidapi.com/api/v1/flights/getPriceCalendar
 // ════════════════════════════════════════════════
 async function fetchSkyPrice(from, to, ddate, paxObj) {
+  // 有後端時呼叫後端（避免 API key 暴露在前端）
+  if (BACKEND_URL) {
+    try {
+      const params = new URLSearchParams({ from: from.iata, to: to.iata, date: ddate, adults: paxObj.adult, src: 'sky' });
+      const r = await fetch(`${BACKEND_URL}/api/price?${params}`);
+      if (r.ok) {
+        const json = await r.json();
+        if (json.price) return json.price;
+      }
+    } catch(e) { console.warn('[sky/backend] 例外:', e); }
+    return null;
+  }
   if (!_getSkyKey()) return null;
   return await _fetchSkyPriceCalendar(from, to, ddate);
 }
