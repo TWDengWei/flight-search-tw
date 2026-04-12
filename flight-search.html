@@ -111,6 +111,19 @@
     .result-link-arrow{font-size:18px;color:var(--text-muted)}
     .sky-badge{display:inline-block;background:#00a5e0;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;margin-right:6px}
     .trip-badge{display:inline-block;background:#0066cc;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;margin-right:6px}
+    .results-divider{width:100%;padding:4px 24px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;background:#f8fafc;border-top:1px solid var(--border)}
+
+    /* Airline cards section */
+    .airline-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-bottom:48px}
+    .airline-card{border-radius:var(--radius);border:1.5px solid var(--border);background:var(--white);padding:18px 20px;cursor:pointer;transition:all .22s;box-shadow:var(--shadow-sm);text-decoration:none;color:var(--text);display:flex;align-items:center;gap:14px}
+    .airline-card:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+    .airline-logo{width:48px;height:48px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;font-weight:800;color:#fff}
+    .airline-info{}
+    .airline-name{font-size:14px;font-weight:700;margin-bottom:2px}
+    .airline-code{font-size:11px;color:var(--text-muted);margin-bottom:4px}
+    .airline-deep{font-size:11px;padding:2px 7px;border-radius:4px;font-weight:600;display:inline-block}
+    .deep-yes{background:#dcfce7;color:#15803d}
+    .deep-no{background:#f1f5f9;color:#64748b}
 
     /* Main */
     .main{max-width:1200px;margin:0 auto;padding:48px 24px}
@@ -351,6 +364,10 @@
 
 <!-- Main -->
 <main class="main">
+
+  <!-- Airlines Direct Booking -->
+  <h2 class="section-title">台灣航空直購</h2>
+  <div class="airline-grid" id="airlineGrid"></div>
 
   <!-- Destination Browser -->
   <h2 class="section-title">探索目的地</h2>
@@ -620,6 +637,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderDepTabs();
   renderRegionTabs();
   renderDestGrid();
+  renderAirlineGrid();
   updateFromInput();
   const now = new Date();
   calYear = now.getFullYear();
@@ -826,6 +844,75 @@ function updatePaxLabel() {
 }
 
 // ════════════════════════════════════════════════
+//  Taiwan Airlines Config
+// ════════════════════════════════════════════════
+const TW_AIRLINES = [
+  {
+    id: 'ci',
+    name: '中華航空',
+    en: 'China Airlines',
+    code: 'CI',
+    color: '#003087',
+    emoji: '✈',
+    deepLink: false,
+    bookingUrl: 'https://www.china-airlines.com/tw/zh/booking/book-flights/flight-search',
+    note: '前往官網選擇艙等與日期',
+    buildUrl: () => 'https://www.china-airlines.com/tw/zh/booking/book-flights/flight-search'
+  },
+  {
+    id: 'br',
+    name: '長榮航空',
+    en: 'EVA Air',
+    code: 'BR',
+    color: '#007b5e',
+    emoji: '🌿',
+    deepLink: false,
+    bookingUrl: 'https://booking.evaair.com/flyeva/eva/b2c/booking-online.aspx?lang=zh-tw',
+    note: '前往官網填入航班資訊',
+    buildUrl: () => 'https://booking.evaair.com/flyeva/eva/b2c/booking-online.aspx?lang=zh-tw'
+  },
+  {
+    id: 'jx',
+    name: '星宇航空',
+    en: 'STARLUX Airlines',
+    code: 'JX',
+    color: '#1a1a2e',
+    emoji: '⭐',
+    deepLink: false,
+    bookingUrl: 'https://www.starlux-airlines.com/zh-TW/booking/book-flight/search-a-flight',
+    note: '前往官網選擇航班',
+    buildUrl: () => 'https://www.starlux-airlines.com/zh-TW/booking/book-flight/search-a-flight'
+  },
+  {
+    id: 'it',
+    name: '台灣虎航',
+    en: 'Tigerair Taiwan',
+    code: 'IT',
+    color: '#f58220',
+    emoji: '🐯',
+    deepLink: true,
+    bookingUrl: 'https://booking.tigerairtw.com/',
+    note: '自動帶入搜尋條件',
+    buildUrl: (from, to, ddate, rdate, paxObj, tripT) => {
+      const params = new URLSearchParams({
+        type: tripT === 'd' ? 'roundTrip' : 'oneWay',
+        outbound: `${from.iata}-${to.iata}`,
+        departureDate: ddate,
+        adult: paxObj.adult,
+        children: paxObj.child,
+        infant: paxObj.infant,
+        language: 'zh-TW'
+      });
+      if (tripT === 'd' && rdate) {
+        params.set('inbound', `${to.iata}-${from.iata}`);
+        params.set('returnDate', rdate);
+      }
+      return 'https://booking.tigerairtw.com/?' + params.toString();
+    }
+  }
+];
+
+// ════════════════════════════════════════════════
 //  Skyscanner API Config
 //  官方 Partner API (需申請)：
 //    POST https://partners.api.skyscanner.net/apiservices/v3/flights/live/search/create
@@ -917,12 +1004,13 @@ function searchOn(platform) {
   const paxLabel = `${pax.adult}成人${pax.child?` · ${pax.child}兒童`:''}${pax.infant?` · ${pax.infant}嬰兒`:''}`;
   const cabinLabel = { y:'經濟艙', s:'豪華經濟', c:'商務艙', f:'頭等艙' }[document.getElementById('cabin').value];
 
-  document.getElementById('resultsTitle').textContent =
-    `${from.name} → ${to.name}`;
+  document.getElementById('resultsTitle').textContent = `${from.name} → ${to.name}`;
   document.getElementById('resultsSubtitle').textContent =
     `${tripType_label} · ${dateLabel} · ${paxLabel} · ${cabinLabel}`;
 
-  document.getElementById('resultsLinks').innerHTML = `
+  // 比價平台
+  let html = `
+    <div class="results-divider">比價平台</div>
     <a class="result-link-card" href="${tripUrl}" target="_blank" rel="noopener">
       <div>
         <div class="result-link-platform"><span class="trip-badge">Trip.com</span>攜程旅行</div>
@@ -937,16 +1025,66 @@ function searchOn(platform) {
       </div>
       <span class="result-link-arrow">→</span>
     </a>
+    <div class="results-divider" style="margin-top:8px">台灣航空直購</div>
   `;
+
+  // 台灣航空
+  TW_AIRLINES.forEach(airline => {
+    const url = airline.buildUrl(from, to, ddate, rdate, pax, tripType);
+    const badgeStyle = `background:${airline.color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;margin-right:6px;display:inline-block`;
+    html += `
+      <a class="result-link-card" href="${url}" target="_blank" rel="noopener"
+         style="border-color:${airline.deepLink ? airline.color+'66' : 'var(--border)'}">
+        <div>
+          <div class="result-link-platform">
+            <span style="${badgeStyle}">${airline.code}</span>${airline.name}
+          </div>
+          <div class="result-link-desc">${airline.en} · ${airline.note}</div>
+        </div>
+        <span class="result-link-arrow" style="color:${airline.deepLink ? airline.color : 'var(--text-muted)'}">→</span>
+      </a>
+    `;
+  });
+
+  document.getElementById('resultsLinks').innerHTML = html;
 
   const panel = document.getElementById('resultsPanel');
   panel.classList.add('show');
   panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  showToast(`已找到 ${from.name} → ${to.name} 的搜尋結果`);
+  showToast(`找到 ${from.name} → ${to.name}，共 6 個平台可選`);
 }
 
 // 向後相容
 function doSearch() { searchOn('both'); }
+
+// ── Airline Grid ──
+function renderAirlineGrid() {
+  document.getElementById('airlineGrid').innerHTML = TW_AIRLINES.map(a => `
+    <a class="airline-card" href="${a.bookingUrl}" target="_blank" rel="noopener"
+       onclick="airlineCardClick(event,'${a.id}')">
+      <div class="airline-logo" style="background:${a.color}">${a.emoji}</div>
+      <div class="airline-info">
+        <div class="airline-name">${a.name}</div>
+        <div class="airline-code">${a.en} · ${a.code}</div>
+        <span class="airline-deep ${a.deepLink?'deep-yes':'deep-no'}">
+          ${a.deepLink ? '✓ 支援自動帶入' : '跳轉官網'}
+        </span>
+      </div>
+    </a>
+  `).join('');
+}
+
+function airlineCardClick(e, id) {
+  if (!fromAirport || !toAirport) return; // 沒選路線時直接開官網
+  const ddate = document.getElementById('ddate').value;
+  if (!ddate) return;
+  const rdate = document.getElementById('rdate').value;
+  const airline = TW_AIRLINES.find(a => a.id === id);
+  if (!airline || !airline.deepLink) return; // 非 deep link 就正常跳官網
+  e.preventDefault();
+  const url = airline.buildUrl(fromAirport, toAirport, ddate, rdate, pax, tripType);
+  window.open(url, '_blank');
+}
 
 // ════════════════════════════════════════════════
 //  Price Calendar
