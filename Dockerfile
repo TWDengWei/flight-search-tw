@@ -31,5 +31,5 @@ RUN npm ci --omit=dev
 
 COPY backend/ ./
 
-EXPOSE 3000
+EXPOSE 10000
 CMD ["node", "server.js"]
