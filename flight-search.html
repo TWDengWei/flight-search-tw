@@ -1121,7 +1121,8 @@ const SKYSCANNER_RAPIDAPI_KEY = 'K0DIojlrT0msh940ger0Im41erhUp1fFCItjsnuAmYu1JTW
 // 部署後端後將此 URL 改為實際後端位址，例如：
 //   https://flightgo-backend.onrender.com
 // 若為空字串，前端直接呼叫各 API（使用 RapidAPI key）
-const BACKEND_URL = 'https://flightgo-backend.onrender.com';
+// 優先本地後端，若失敗自動 fallback 到 Render 部署版
+const BACKEND_URL = 'http://localhost:3000';
 
 // ── Skyscanner URL builder ──
 function buildSkyscannerUrl(ddate) {
@@ -1734,26 +1735,73 @@ async function _runSearch(src) {
   if (!_flightCtx) return;
   const { from, to, ddate, cabin } = _flightCtx;
 
+  let flights     = [];
   let price       = null;
   let isMock      = false;
-  let priceSource = src;   // 'trip' | 'sky' | 'sky-fallback'
+  let priceSource = src;
 
   try {
     if (src === 'trip') {
-      const result = await fetchTripPrice(from, to, ddate, pax);
-      if (result && typeof result === 'object') {
-        price = result.price;
-        priceSource = result.source;  // 'trip' or 'sky-fallback'
-      } else {
-        price = result;
+      // ── 優先：從後端取得真實 FlightListSearchSSE 航班資料 ──
+      let realFlights = null;
+      if (BACKEND_URL) {
+        try {
+          const params = new URLSearchParams({ from: from.iata, to: to.iata, date: ddate, adults: pax.adult });
+          const r = await fetch(`${BACKEND_URL}/api/flights?${params}`, { signal: AbortSignal.timeout(25000) });
+          if (r.ok) {
+            const json = await r.json();
+            if (json.flights && json.flights.length > 0) {
+              realFlights = json.flights;
+              price = json.cheapestPrice;
+              priceSource = 'trip_sse';
+              console.log(`[Trip.com/real-flights] ${realFlights.length} 班，最低 TWD ${price}`);
+            }
+          }
+        } catch(e) { console.warn('[Trip.com/api-flights] 失敗，改用直連:', e.message); }
       }
+
+      // 若取得真實資料，轉換成 flight card 格式
+      if (realFlights && realFlights.length > 0) {
+        flights = realFlights.map((f, idx) => {
+          const depTime = f.depTime ? f.depTime.slice(11, 16) : '00:00';  // 取 HH:MM
+          const arrTime = f.arrTime ? f.arrTime.slice(11, 16) : '00:00';
+          const [dh, dm] = depTime.split(':').map(Number);
+          const [ah, am] = arrTime.split(':').map(Number);
+          let durMin = (ah * 60 + am) - (dh * 60 + dm);
+          if (durMin < 0) durMin += 24 * 60;  // 跨午夜
+          const meta = AIRLINE_META[f.airline] || { name: f.airline, color: '#555', en: f.airline };
+          return {
+            id: `trip-real-${idx}`,
+            airline: { code: f.airline, ...meta },
+            flightNo: f.flightNo,
+            from: { iata: f.depAirport || from.iata, time: depTime },
+            to:   { iata: f.arrAirport || to.iata,   time: arrTime },
+            duration: durMin || 120,
+            stops: f.stops || 0,
+            price: f.price,
+            currency: 'TWD',
+            src: 'trip'
+          };
+        });
+        isMock = false;
+      } else {
+        // Fallback：fetchTripPrice + generateFlights
+        const result = await fetchTripPrice(from, to, ddate, pax);
+        if (result && typeof result === 'object') {
+          price = result.price;
+          priceSource = result.source;
+        } else { price = result; }
+        flights = generateFlights(from, to, ddate, pax, cabin, price, src);
+        if (!price) isMock = true;
+      }
+
     } else {
+      // Skyscanner
       price = await fetchSkyPrice(from, to, ddate, pax);
+      flights = generateFlights(from, to, ddate, pax, cabin, price, src);
+      if (!price) isMock = true;
     }
   } catch(e) { console.error(`[_runSearch/${src}]`, e); }
-
-  const flights = generateFlights(from, to, ddate, pax, cabin, price, src);
-  if (!price) isMock = true;
 
   _cache[src] = { flights, isMock, priceSource };
   _setStatus(src, isMock ? 'mock' : 'live');
@@ -1766,54 +1814,74 @@ async function _runSearch(src) {
 }
 
 // ── Trip.com 價格 API ──
-// 策略 1（有後端）：呼叫 BACKEND_URL/api/price?src=trip
-//   後端用 Puppeteer stealth 取得真實 Trip.com session，繞過 PerimeterX
-// 策略 2（無後端）：先試 Trip.com 直連，失敗則 fallback sky-scrapper
+// 策略 1（有後端）：呼叫 BACKEND_URL/api/price?src=sse → FlightListSearchSSE 即時搜尋
+// 策略 2（直連）：直連 www.trip.com FlightListSearchSSE（需同源 session）
+// 策略 3（Fallback）：sky-scrapper getPriceCalendar
 async function fetchTripPrice(from, to, ddate, paxObj) {
-  // ── 有後端 ──
+  // ── 策略 1：本地後端（FlightListSearchSSE v3）──
   if (BACKEND_URL) {
     try {
       const params = new URLSearchParams({
         from: from.iata, to: to.iata, date: ddate,
-        adults: paxObj.adult, src: 'auto'
+        adults: paxObj.adult, src: 'sse'
       });
-      const r = await fetch(`${BACKEND_URL}/api/price?${params}`);
+      const r = await fetch(`${BACKEND_URL}/api/price?${params}`, { signal: AbortSignal.timeout(20000) });
       if (r.ok) {
         const json = await r.json();
         if (json.price) {
-          console.log(`[Trip.com/backend] ${json.source}: ${json.price}`);
-          return { price: json.price, source: json.source === 'trip' ? 'trip' : 'sky-fallback' };
+          console.log(`[Trip.com/backend-sse] ${json.source}: TWD ${json.price} (${json.flightNo || ''})`);
+          return { price: json.price, source: 'trip_sse', flightNo: json.flightNo, depTime: json.depTime };
         }
       }
-    } catch(e) { console.warn('[Trip.com/backend] 例外:', e); }
-    return null;
+    } catch(e) { console.warn('[Trip.com/backend] 呼叫失敗，嘗試直連:', e.message); }
   }
 
-  // ── 無後端：直連 Trip.com（需使用者有 session cookies）──
+  // ── 策略 2：直連 Trip.com FlightListSearchSSE（同源 session）──
   try {
-    const r = await fetch('https://m.ctrip.com/restapi/soa2/14427/getLowPriceInCalender', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      credentials:'include',
+    const r = await fetch('https://www.trip.com/restapi/soa2/27015/FlightListSearchSSE', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        Head: { Locale:'zh_TW', Source:'Online', Currency:'TWD', SiteID:2,
-                ExtendFields:{ DisableCalenderDefaultSetting:'TRUE' } },
-        dCity: from.iata, aCity: to.iata,
-        flightWayType:'OW', dDate:ddate, cabinClass:'y',
-        adultCount:paxObj.adult, childCount:paxObj.child||0, babyCount:paxObj.infant||0
+        mode: 0,
+        searchCriteria: {
+          grade: 3, realGrade: 1, tripType: 1, journeyNo: 1,
+          passengerInfoType: { adultCount: paxObj.adult, childCount: paxObj.child||0, infantCount: paxObj.infant||0 },
+          journeyInfoTypes: [{ journeyNo: 1, departDate: ddate, departCode: from.iata, arriveCode: to.iata, departAirport: '', arriveAirport: '' }],
+          policyId: null
+        },
+        sortInfoType: { direction: true, orderBy: 'Cheapest', topList: [] },
+        tagList: [], flagList: ['NEED_RESET_SORT'],
+        filterType: { filterFlagTypes: [], queryItemSettings: [], studentsSelectedStatus: true },
+        abtList: [],
+        head: {
+          cid: '09034133310159917369', ctok: '', cver: '3', lang: '01', sid: '8888', syscode: '40', auth: '', xsid: '',
+          extension: [
+            { name: 'source', value: 'ONLINE' }, { name: 'sotpGroup', value: 'Trip' },
+            { name: 'sotpLocale', value: 'zh-TW' }, { name: 'sotpCurrency', value: 'TWD' }
+          ],
+          Locale: 'zh-TW', Language: 'zh', Currency: 'TWD', ClientID: '', appid: '700020'
+        }
       })
     });
     if (r.ok) {
-      const json = await r.json();
-      const list = json?.lowPriceInCalenderDtoInfoList || [];
-      const exact = list.find(i => i.dDate === ddate);
-      if (exact?.currencyPrice) return { price: exact.currencyPrice, source: 'trip' };
-      const nearby = list.filter(i => i.currencyPrice && i.dDate >= ddate)
-        .sort((a,b) => a.dDate.localeCompare(b.dDate));
-      if (nearby.length) return { price: nearby[0].currencyPrice, source: 'trip' };
+      const text = await r.text();
+      const block = text.split('\n\n').find(b => b.startsWith('data:'));
+      if (block) {
+        const json = JSON.parse(block.slice(5).trim());
+        const list = (json.itineraryList || []).map(item => {
+          const seg = item.journeyList?.[0]?.transSectionList?.[0];
+          const policy = item.policies?.[0];
+          return { price: policy?.price?.totalPrice, flightNo: seg?.flightInfo?.flightNo, depTime: seg?.departDateTime };
+        }).filter(f => f.price > 0).sort((a, b) => a.price - b.price);
+        if (list.length) {
+          console.log(`[Trip.com/direct-sse] TWD ${list[0].price} (${list[0].flightNo})`);
+          return { price: list[0].price, source: 'trip_sse', flightNo: list[0].flightNo, depTime: list[0].depTime };
+        }
+      }
     }
-  } catch(e) { console.warn('[Trip.com] 直連例外:', e); }
+  } catch(e) { console.warn('[Trip.com] 直連 SSE 失敗:', e.message); }
 
-  // ── Fallback：sky-scrapper getPriceCalendar ──
+  // ── 策略 3：Fallback sky-scrapper ──
   const fallbackPrice = await _fetchSkyPriceCalendar(from, to, ddate);
   if (fallbackPrice) return { price: fallbackPrice, source: 'sky-fallback' };
   return null;
@@ -1825,18 +1893,18 @@ async function fetchTripPrice(from, to, ddate, paxObj) {
 //  GET sky-scrapper.p.rapidapi.com/api/v1/flights/getPriceCalendar
 // ════════════════════════════════════════════════
 async function fetchSkyPrice(from, to, ddate, paxObj) {
-  // 有後端時呼叫後端（避免 API key 暴露在前端）
+  // 有後端時呼叫後端（避免 API key 暴露在前端），若失敗則直連
   if (BACKEND_URL) {
     try {
       const params = new URLSearchParams({ from: from.iata, to: to.iata, date: ddate, adults: paxObj.adult, src: 'sky' });
-      const r = await fetch(`${BACKEND_URL}/api/price?${params}`);
+      const r = await fetch(`${BACKEND_URL}/api/price?${params}`, { signal: AbortSignal.timeout(15000) });
       if (r.ok) {
         const json = await r.json();
         if (json.price) return json.price;
       }
-    } catch(e) { console.warn('[sky/backend] 例外:', e); }
-    return null;
+    } catch(e) { console.warn('[sky/backend] 後端失敗，嘗試直連:', e.message); }
   }
+  // 直連 sky-scrapper（需前端有 RapidAPI key）
   if (!_getSkyKey()) return null;
   return await _fetchSkyPriceCalendar(from, to, ddate);
 }
